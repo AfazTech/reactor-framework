@@ -1,0 +1,15 @@
+
+test.sqlite
+*.sqlite
+logs/*.log
+backups/
+vendor
+.DS_Store
+Thumbs.db
+*.log
+*.cache
+.idea/
+.vscode/
+panel/cai.txt
+*.txt
+composer.lock
