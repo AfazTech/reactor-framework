@@ -64,6 +64,26 @@ if (!function_exists('config')) {
     }
 }
 
+if (!function_exists('config_path')) {
+    /**
+     * Resolve a path inside the host application's config directory.
+     */
+    function config_path(string $path = ''): string
+    {
+        return base_path('config' . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+    }
+}
+
+if (!function_exists('app_path')) {
+    /**
+     * Resolve a path inside the host application's app directory.
+     */
+    function app_path(string $path = ''): string
+    {
+        return base_path('app' . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+    }
+}
+
 if (!function_exists('database_path')) {
     function database_path(string $path = ''): string
     {
@@ -75,5 +95,28 @@ if (!function_exists('storage_path')) {
     function storage_path(string $path = ''): string
     {
         return base_path('storage' . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+    }
+}
+
+if (!function_exists('lang_path')) {
+    /**
+     * Resolve a path inside the host application's lang directory.
+     */
+    function lang_path(string $path = ''): string
+    {
+        return base_path('lang' . ($path !== '' ? '/' . ltrim($path, '/') : ''));
+    }
+}
+
+if (!function_exists('public_path')) {
+    /**
+     * Resolve a path inside the host application's public directory.
+     *
+     * Reactor uses "public_html" as the public directory name so it
+     * works on shared hosts that reserve "public" for other purposes.
+     */
+    function public_path(string $path = ''): string
+    {
+        return base_path('public_html' . ($path !== '' ? '/' . ltrim($path, '/') : ''));
     }
 }

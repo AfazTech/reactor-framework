@@ -16,6 +16,8 @@ use Reactor\Core\UpdateTypeResolver;
 use Reactor\Core\UnknownCommandHandler;
 use Reactor\Core\NullUserProvider;
 use Reactor\Core\NullDatabaseManager;
+use Reactor\Core\Packages\PackageManifest;
+use Reactor\Core\Packages\PackageRegistrar;
 use Reactor\Core\Processing\MiddlewareProcessor;
 use Reactor\Core\Processing\HandlerInvoker;
 use Reactor\Core\Routing\CommandParser;
@@ -136,6 +138,27 @@ class CoreServiceProvider implements ServiceProviderInterface
                 return new MigrationRegistrar($c->get(LoggerInterface::class));
             });
         }
+
+        // Package infrastructure. The manifest scans vendor/composer
+        // metadata (or loads its cache); the registrar applies package
+        // config sources, migration sources and class aliases. Both are
+        // singletons so that the manifest is read at most once per
+        // process and the registrar stays consistent.
+        $container->singleton(PackageManifest::class, function ($c) {
+            $paths = $c->get(Paths::class);
+            return new PackageManifest(
+                $paths,
+                $paths->path('vendor'),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        $container->singleton(PackageRegistrar::class, function ($c) {
+            return new PackageRegistrar(
+                $c->get(PackageManifest::class),
+                $c->get(Container::class)
+            );
+        });
 
         $container->singleton(Router::class, function ($c) {
             return new Router(

@@ -14,6 +14,8 @@ use Reactor\Console\Commands\MakeMiddlewareCommand;
 use Reactor\Console\Commands\MakeStepCommand;
 use Reactor\Console\Commands\QueueWorkCommand;
 use Reactor\Console\Commands\ScheduleRunCommand;
+use Reactor\Console\Commands\PackageDiscoverCommand;
+use Reactor\Console\Commands\VendorPublishCommand;
 use Reactor\Core\Container;
 
 class Kernel
@@ -39,5 +41,7 @@ class Kernel
         $app->add($this->container->get(MakeStepCommand::class));
         $app->add($this->container->get(QueueWorkCommand::class));
         $app->add($this->container->get(ScheduleRunCommand::class));
+        $app->add($this->container->get(PackageDiscoverCommand::class));
+        $app->add($this->container->get(VendorPublishCommand::class));
     }
 }
