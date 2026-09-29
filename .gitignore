@@ -12,4 +12,5 @@ Thumbs.db
 .vscode/
 panel/cai.txt
 *.txt
+.cai*
 composer.lock
