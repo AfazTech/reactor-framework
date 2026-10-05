@@ -50,6 +50,18 @@ class MigrationRunnerTest extends TestCase
             });
     }
 
+    /**
+     * Configure the mock DatabaseManagerInterface to report the given
+     * driver via getConfig(). Drivers unknown to the runner (i.e. not
+     * in NON_TRANSACTIONAL_DDL_DRIVERS) are treated as transaction-capable.
+     */
+    private function setDriver(string $driver): void
+    {
+        $this->db
+            ->method('getConfig')
+            ->willReturn(['driver' => $driver]);
+    }
+
     /** @test */
     public function it_runs_pending_migrations()
     {
@@ -366,5 +378,188 @@ class MigrationRunnerTest extends TestCase
         $this->db->expects($this->never())->method('transaction');
 
         $this->runner->reset();
+    }
+
+    // ------------------------------------------------------------------
+    // Schema transaction support (regression tests for MySQL et al.)
+    // ------------------------------------------------------------------
+
+    /** @test */
+    public function it_runs_migrations_without_schema_transaction_on_mysql()
+    {
+        $this->setDriver('mysql');
+
+        $this->repository
+            ->method('getPendingMigrations')
+            ->willReturn(['2026_07_16_000002_create_users_table' => '/path/migration1.php']);
+
+        $this->repository
+            ->method('getNextBatchNumber')
+            ->willReturn(1);
+
+        $migration = $this->createMock(Migration::class);
+        $migration->expects($this->once())->method('up');
+
+        $this->repository
+            ->method('loadMigration')
+            ->willReturn($migration);
+
+        // The whole point of the fix: no transaction is opened on MySQL.
+        $this->db->expects($this->never())->method('transaction');
+
+        $marked = [];
+        $this->repository
+            ->expects($this->once())
+            ->method('markRan')
+            ->willReturnCallback(function (string $name, int $batch) use (&$marked) {
+                $marked[] = [$name, $batch];
+            });
+
+        $this->captureInfoLogs();
+
+        $this->runner->run();
+
+        $this->assertSame([
+            ['2026_07_16_000002_create_users_table', 1],
+        ], $marked);
+
+        $this->assertSame([
+            'Migration executed: 2026_07_16_000002_create_users_table',
+            'Migrations completed: 1 executed',
+        ], $this->infoLogs);
+    }
+
+    /** @test */
+    public function it_rolls_back_without_schema_transaction_on_mysql()
+    {
+        $this->setDriver('mysql');
+
+        $this->repository
+            ->method('getBatches')
+            ->with(1)
+            ->willReturn([2]);
+
+        $this->repository
+            ->method('getMigrationsByBatch')
+            ->with(2)
+            ->willReturn([(object) ['migration' => '2026_07_16_000002_create_users_table']]);
+
+        $migration = $this->createMock(Migration::class);
+        $migration->expects($this->once())->method('down');
+
+        $this->repository
+            ->method('loadMigration')
+            ->willReturn($migration);
+
+        $this->db->expects($this->never())->method('transaction');
+
+        $this->repository
+            ->expects($this->once())
+            ->method('remove')
+            ->with('2026_07_16_000002_create_users_table');
+
+        $this->captureInfoLogs();
+
+        $this->runner->rollback(1);
+
+        $this->assertSame([
+            'Rolled back: 2026_07_16_000002_create_users_table',
+            'Rolled back batch: 2',
+        ], $this->infoLogs);
+    }
+
+    /** @test */
+    public function it_skips_schema_transactions_on_mariadb_sqlsrv_and_oracle()
+    {
+        foreach (['mariadb', 'sqlsrv', 'oracle'] as $driver) {
+            $db = $this->createMock(DatabaseManagerInterface::class);
+            $logger = $this->createMock(LoggerInterface::class);
+            $repository = $this->createMock(MigrationRepository::class);
+
+            $db->method('getConfig')->willReturn(['driver' => $driver]);
+            $db->expects($this->never())->method('transaction');
+
+            $repository
+                ->method('getPendingMigrations')
+                ->willReturn([$driver . '_migration' => '/path/x.php']);
+            $repository->method('getNextBatchNumber')->willReturn(1);
+
+            $migration = $this->createMock(Migration::class);
+            $migration->expects($this->once())->method('up');
+            $repository->method('loadMigration')->willReturn($migration);
+            $repository->expects($this->once())->method('markRan');
+
+            $runner = new MigrationRunner($db, $logger, $repository);
+            $runner->run();
+        }
+
+        $this->assertTrue(true);
+    }
+
+    /** @test */
+    public function it_uses_schema_transaction_on_postgres()
+    {
+        $this->setDriver('pgsql');
+
+        $this->repository
+            ->method('getPendingMigrations')
+            ->willReturn(['2026_07_16_000002_create_users_table' => '/path/migration1.php']);
+
+        $this->repository
+            ->method('getNextBatchNumber')
+            ->willReturn(1);
+
+        $migration = $this->createMock(Migration::class);
+        $migration->expects($this->once())->method('up');
+
+        $this->repository
+            ->method('loadMigration')
+            ->willReturn($migration);
+
+        $this->db
+            ->expects($this->once())
+            ->method('transaction')
+            ->willReturnCallback(function ($callback) {
+                $callback();
+            });
+
+        $this->captureInfoLogs();
+
+        $this->runner->run();
+
+        $this->assertSame([
+            'Migration executed: 2026_07_16_000002_create_users_table',
+            'Migrations completed: 1 executed',
+        ], $this->infoLogs);
+    }
+
+    /** @test */
+    public function it_uses_schema_transaction_on_sqlite_by_default()
+    {
+        // No getConfig() stub on the mock -> PHPUnit returns [] -> driver
+        // falls back to 'sqlite', which supports transactional DDL.
+        $this->repository
+            ->method('getPendingMigrations')
+            ->willReturn(['2026_07_16_000002_create_users_table' => '/path/migration1.php']);
+
+        $this->repository
+            ->method('getNextBatchNumber')
+            ->willReturn(1);
+
+        $migration = $this->createMock(Migration::class);
+        $migration->expects($this->once())->method('up');
+
+        $this->repository
+            ->method('loadMigration')
+            ->willReturn($migration);
+
+        $this->db
+            ->expects($this->once())
+            ->method('transaction')
+            ->willReturnCallback(function ($callback) {
+                $callback();
+            });
+
+        $this->runner->run();
     }
 }
