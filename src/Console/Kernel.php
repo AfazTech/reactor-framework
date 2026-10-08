@@ -16,6 +16,7 @@ use Reactor\Console\Commands\QueueWorkCommand;
 use Reactor\Console\Commands\ScheduleRunCommand;
 use Reactor\Console\Commands\PackageDiscoverCommand;
 use Reactor\Console\Commands\VendorPublishCommand;
+use Reactor\Console\Commands\BotRestartCommand;
 use Reactor\Core\Container;
 
 class Kernel
@@ -43,5 +44,6 @@ class Kernel
         $app->add($this->container->get(ScheduleRunCommand::class));
         $app->add($this->container->get(PackageDiscoverCommand::class));
         $app->add($this->container->get(VendorPublishCommand::class));
+        $app->add($this->container->get(BotRestartCommand::class));
     }
 }
