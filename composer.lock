@@ -4,27 +4,26 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "24de5d68082c7d80d9e807731ea527f8",
+    "content-hash": "fe19605875f829d02b6788913f996666",
     "packages": [
         {
             "name": "afaztech/neili",
-            "version": "v2.3.0",
+            "version": "v3.0.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/AfazTech/neili.git",
-                "reference": "2aec613e733eb96d9326aedd9285383c7b276190"
+                "reference": "6e933fc0460b135bf93d6e168adee6213fade300"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/AfazTech/neili/zipball/2aec613e733eb96d9326aedd9285383c7b276190",
-                "reference": "2aec613e733eb96d9326aedd9285383c7b276190",
+                "url": "https://api.github.com/repos/AfazTech/neili/zipball/6e933fc0460b135bf93d6e168adee6213fade300",
+                "reference": "6e933fc0460b135bf93d6e168adee6213fade300",
                 "shasum": ""
             },
             "require": {
                 "amphp/file": "^3.2",
                 "amphp/http-client": "^5.3",
-                "php": ">=8.1",
-                "psr/log": "^3.0"
+                "php": ">=8.1"
             },
             "require-dev": {
                 "phpunit/phpunit": "^10.5"
@@ -60,9 +59,9 @@
             ],
             "support": {
                 "issues": "https://github.com/AfazTech/neili/issues",
-                "source": "https://github.com/AfazTech/neili/tree/v2.3.0"
+                "source": "https://github.com/AfazTech/neili/tree/v3.0.1"
             },
-            "time": "2026-10-04T05:24:49+00:00"
+            "time": "2026-10-08T21:46:13+00:00"
         },
         {
             "name": "amphp/amp",
