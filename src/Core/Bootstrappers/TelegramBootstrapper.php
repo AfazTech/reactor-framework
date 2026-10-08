@@ -8,7 +8,6 @@ use Reactor\Core\BootstrapperInterface;
 use Reactor\Core\Config;
 use Reactor\Core\Container;
 use Reactor\Contracts\LoggerInterface;
-use Reactor\Exceptions\ConfigNotFoundException;
 
 /**
  * Wires the Telegram client and long-polling poller.
@@ -19,11 +18,14 @@ use Reactor\Exceptions\ConfigNotFoundException;
  * it entirely and register a Neili\Client binding through a service
  * provider instead.
  *
- * A valid token is required and must come from the host application's
- * configuration (typically config/bot.php with a bot.token key, or the
- * BOT_TOKEN environment variable). When the token is missing a
- * descriptive ConfigNotFoundException is thrown so the failure is
- * obvious rather than silently falling through.
+ * When no token is configured the bootstrapper logs a warning and
+ * returns without registering the client or poller. This lets CLI
+ * commands that do not need Telegram (migrations, code generators,
+ * lifecycle commands such as `stop` and `restart`) run in a fresh
+ * environment. Commands that do need Telegram (most importantly
+ * `start`) throw a descriptive RuntimeException at the point of use,
+ * instead of failing silently or requiring a token for unrelated
+ * operations.
  */
 class TelegramBootstrapper implements BootstrapperInterface
 {
@@ -34,12 +36,13 @@ class TelegramBootstrapper implements BootstrapperInterface
 
         $token = $config->getToken();
         if (empty($token)) {
-            $logger->critical('Telegram token is not set in configuration');
-            throw new ConfigNotFoundException(
-                'Telegram token is not configured. Set bot.token in config/bot.php '
-                . 'or BOT_TOKEN in your .env, or omit TelegramBootstrapper to run '
-                . 'without a framework-managed Telegram client.'
+            $logger->warning(
+                'Telegram token is not set. Telegram-dependent features '
+                . '(polling, sending messages) will not be available until '
+                . 'a token is configured via bot.token in config/bot.php '
+                . 'or TOKEN in .env.'
             );
+            return;
         }
 
         $logger->info('Telegram token loaded', [

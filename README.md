@@ -79,7 +79,7 @@ Run migrations and start the bot:
 
 ```bash
 php reactor.php migrate
-php bot.php
+php reactor.php start
 ```
 
 ---

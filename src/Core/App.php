@@ -173,12 +173,20 @@ class App
      * Start the bot in polling mode.
      *
      * Requires a Neili\Poller binding. When TelegramBootstrapper is not
-     * part of the bootstrap chain, the host application must provide
-     * its own Poller binding before calling this method.
+     * part of the bootstrap chain, or when it was skipped because no
+     * token is configured, a descriptive RuntimeException is thrown so
+     * the operator knows exactly what is missing.
      */
     public function start(): void
     {
         if ($this->poller === null) {
+            if (empty($this->config->getToken())) {
+                throw new \RuntimeException(
+                    'Cannot start polling: Telegram token is not configured. '
+                    . 'Set bot.token in config/bot.php or TOKEN in your .env.'
+                );
+            }
+
             throw new \RuntimeException(
                 'Polling is not available: no Neili\\Poller was registered. '
                 . 'Include TelegramBootstrapper in the bootstrap chain or bind '
