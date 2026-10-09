@@ -22,11 +22,17 @@ use Reactor\Core\Processing\MiddlewareProcessor;
 use Reactor\Core\Processing\HandlerInvoker;
 use Reactor\Core\Routing\CommandParser;
 use Reactor\Database\Migrations\MigrationRegistrar;
+use Reactor\Queue\DatabaseQueue;
+use Reactor\Queue\FailedJobRepository;
+use Reactor\Queue\QueueManager;
+use Reactor\Queue\Signals;
+use Reactor\Queue\Worker;
 use Reactor\Contracts\ServiceProviderInterface;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Contracts\LanguageInterface;
 use Reactor\Contracts\DatabaseManagerInterface;
 use Reactor\Contracts\UserProviderInterface;
+use Reactor\Contracts\QueueManagerInterface;
 use Reactor\Database\Migrations\Migrator;
 
 /**
@@ -179,6 +185,43 @@ class CoreServiceProvider implements ServiceProviderInterface
                 $c->get(Paths::class),
                 $c->get(Container::class),
                 $c->get(MigrationRegistrar::class)
+            );
+        });
+
+        // Queue infrastructure. The driver is bound once as a singleton
+        // so all consumers share the same connection; the manager, the
+        // failed-jobs repository, the restart signal and the worker are
+        // all singletons for the same reason.
+        $container->singleton(QueueManagerInterface::class, function ($c) {
+            return new DatabaseQueue($c->get(DatabaseManagerInterface::class));
+        });
+
+        $container->singleton(QueueManager::class, function ($c) {
+            return new QueueManager(
+                $c->get(Container::class),
+                $c->get(QueueManagerInterface::class)
+            );
+        });
+
+        $container->singleton(Signals::class, function ($c) {
+            $paths = $c->get(Paths::class);
+            return new Signals($paths->storage() . '/framework/queue-restart');
+        });
+
+        $container->singleton(FailedJobRepository::class, function ($c) {
+            return new FailedJobRepository(
+                $c->get(DatabaseManagerInterface::class),
+                $c->get(LoggerInterface::class)
+            );
+        });
+
+        $container->singleton(Worker::class, function ($c) {
+            return new Worker(
+                $c->get(QueueManager::class),
+                $c->get(Container::class),
+                $c->get(LoggerInterface::class),
+                $c->get(FailedJobRepository::class),
+                $c->get(Signals::class)
             );
         });
 

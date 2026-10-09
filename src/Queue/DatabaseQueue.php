@@ -15,25 +15,22 @@ use Reactor\Contracts\DatabaseManagerInterface;
  * row-level locking (MySQL/PostgreSQL) a FOR UPDATE lock is applied so
  * that two workers cannot reserve the same job. On SQLite, transactions
  * are serialized by the engine itself, so no explicit row lock is needed.
+ *
+ * Priority queues: pop() accepts either a single queue name or an array
+ * of names. When an array is given, each queue is tried in order and the
+ * first non-empty one is used.
  */
 class DatabaseQueue implements QueueManagerInterface
 {
     private DatabaseManagerInterface $db;
     private string $table;
 
-    /**
-     * @param DatabaseManagerInterface $db    Database manager instance.
-     * @param string                   $table Queue table name.
-     */
     public function __construct(DatabaseManagerInterface $db, string $table = 'jobs')
     {
         $this->db = $db;
         $this->table = $table;
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function push(string $jobClass, array $data = [], string $queue = 'default', int $delay = 0): void
     {
         $this->db->table($this->table)->insert([
@@ -46,10 +43,21 @@ class DatabaseQueue implements QueueManagerInterface
         ]);
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function pop(string $queue = 'default'): ?array
+    public function pop(string|array $queue = 'default'): ?array
+    {
+        $queues = is_array($queue) ? array_values($queue) : [$queue];
+
+        foreach ($queues as $single) {
+            $job = $this->popFromQueue($single);
+            if ($job !== null) {
+                return $job;
+            }
+        }
+
+        return null;
+    }
+
+    private function popFromQueue(string $queue): ?array
     {
         $this->db->beginTransaction();
 
@@ -84,6 +92,7 @@ class DatabaseQueue implements QueueManagerInterface
 
             return [
                 'id'       => $job->id,
+                'queue'    => (string) $job->queue,
                 'payload'  => json_decode($job->payload, true),
                 'attempts' => $attempts,
             ];
@@ -93,9 +102,6 @@ class DatabaseQueue implements QueueManagerInterface
         }
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function release(array $job, int $delay = 0): void
     {
         $this->db->table($this->table)
@@ -106,9 +112,6 @@ class DatabaseQueue implements QueueManagerInterface
             ]);
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function delete(array $job): void
     {
         $this->db->table($this->table)
@@ -116,9 +119,15 @@ class DatabaseQueue implements QueueManagerInterface
             ->delete();
     }
 
-    /**
-     * Whether the active driver supports SELECT ... FOR UPDATE.
-     */
+    public function size(string $queue): int
+    {
+        return (int) $this->db->table($this->table)
+            ->where('queue', $queue)
+            ->whereNull('reserved_at')
+            ->where('available_at', '<=', time())
+            ->count();
+    }
+
     private function supportsRowLocking(): bool
     {
         $driver = $this->db->getConfig()['driver'] ?? 'sqlite';
