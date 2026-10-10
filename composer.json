@@ -53,6 +53,11 @@
             "Tests\\": "tests/"
         }
     },
+    "extra": {
+        "branch-alias": {
+            "dev-main": "0.5.x-dev"
+        }
+    },
     "minimum-stability": "stable",
     "prefer-stable": true
 }

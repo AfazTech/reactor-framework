@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "fe19605875f829d02b6788913f996666",
+    "content-hash": "fa86d4b1217bf200231ef004cff09d36",
     "packages": [
         {
             "name": "afaztech/neili",
-            "version": "v3.0.1",
+            "version": "v3.0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/AfazTech/neili.git",
-                "reference": "6e933fc0460b135bf93d6e168adee6213fade300"
+                "reference": "7b19409e448bda8b42a675726452527eb37bdcbb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/AfazTech/neili/zipball/6e933fc0460b135bf93d6e168adee6213fade300",
-                "reference": "6e933fc0460b135bf93d6e168adee6213fade300",
+                "url": "https://api.github.com/repos/AfazTech/neili/zipball/7b19409e448bda8b42a675726452527eb37bdcbb",
+                "reference": "7b19409e448bda8b42a675726452527eb37bdcbb",
                 "shasum": ""
             },
             "require": {
@@ -59,9 +59,9 @@
             ],
             "support": {
                 "issues": "https://github.com/AfazTech/neili/issues",
-                "source": "https://github.com/AfazTech/neili/tree/v3.0.1"
+                "source": "https://github.com/AfazTech/neili/tree/v3.0.2"
             },
-            "time": "2026-10-08T21:46:13+00:00"
+            "time": "2026-10-10T17:52:12+00:00"
         },
         {
             "name": "amphp/amp",
