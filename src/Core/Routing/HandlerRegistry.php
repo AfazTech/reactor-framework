@@ -21,6 +21,11 @@ use Reactor\Contracts\LoggerInterface;
  * duplicated sources (root + subdirectory, identical entries in the
  * sources list, re-discovery after a reload) do not register the same
  * handler twice.
+ *
+ * Both #[Text] and #[Callback] are repeatable, so a single handler class
+ * may be registered under several names, patterns, or callback data
+ * values. #[Step] remains single-use because a class can only be a step
+ * handler for one step name at a time.
  */
 class HandlerRegistry
 {
@@ -116,24 +121,37 @@ class HandlerRegistry
                 continue;
             }
 
-            // Callback handler.
-            $callbackAttr = $this->getAttribute($reflection, Callback::class);
-            if ($callbackAttr) {
-                $data = $callbackAttr->data;
-                $pattern = $callbackAttr->pattern ?? null;
-                $handlerData = [
-                    'class'          => $className,
-                    'isStep'         => $callbackAttr->isStep,
-                    'allowedUpdates' => $allowedTypes,
-                    'metadata'       => $metadata,
-                ];
-                if ($pattern !== null) {
-                    $this->addPatternHandler($pattern, $handlerData, $callbackAttr->priority ?? 0, 'callback', $data);
-                } else {
-                    $this->callbacks[$data] = $handlerData;
+            // Callback handlers (repeatable — a single class may listen on
+            // multiple callback data values or patterns).
+            $callbackAttrs = $reflection->getAttributes(Callback::class);
+            if (!empty($callbackAttrs)) {
+                foreach ($callbackAttrs as $attr) {
+                    $callbackAttr = $attr->newInstance();
+                    $data = $callbackAttr->data;
+                    $pattern = $callbackAttr->pattern ?? null;
+                    $handlerData = [
+                        'class'          => $className,
+                        'isStep'         => $callbackAttr->isStep,
+                        'allowedUpdates' => $allowedTypes,
+                        'metadata'       => $metadata,
+                    ];
+                    if ($pattern !== null) {
+                        $this->addPatternHandler(
+                            $pattern,
+                            $handlerData,
+                            $callbackAttr->priority ?? 0,
+                            'callback',
+                            $data
+                        );
+                    } else {
+                        $this->callbacks[$data] = $handlerData;
+                    }
+                    $this->logger->debug('Discovered callback handler', [
+                        'data'  => $data,
+                        'class' => $className,
+                    ]);
+                    $discoveredCount++;
                 }
-                $this->logger->debug('Discovered callback handler', ['data' => $data, 'class' => $className]);
-                $discoveredCount++;
                 continue;
             }
 

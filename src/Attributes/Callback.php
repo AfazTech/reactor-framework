@@ -6,13 +6,17 @@ namespace Reactor\Attributes;
  *
  * This attribute is used to map a handler class to specific callback data
  * or a regex pattern for callback queries from inline keyboards.
+ *
+ * The attribute is repeatable so that a single handler class can respond
+ * to several distinct callback data values or patterns (for example, a
+ * panel handler that also answers "back to menu" callbacks).
  */
-#[\Attribute(\Attribute::TARGET_CLASS)]
+#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
 class Callback
 {
     /**
      * @param string      $data     Exact callback data to match.
-     * @param bool        $isStep   Whether this callback is step‑aware.
+     * @param bool        $isStep   Whether this callback is step-aware.
      * @param string|null $pattern  Regex pattern to match callback data.
      * @param int         $priority Priority for matching (higher = earlier).
      */
