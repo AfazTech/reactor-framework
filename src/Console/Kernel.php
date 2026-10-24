@@ -39,6 +39,19 @@ class Kernel
         $this->container = $container;
     }
 
+    /**
+     * Register an explicit CLI entry point.
+     *
+     * When set, EntryPointResolver checks this path before falling back
+     * to discovery via SCRIPT_FILENAME and argv[0]. This is useful when
+     * the project default (base()/reactor) is not present — for example
+     * when the CLI file lives under bin/ or a custom directory.
+     */
+    public function setEntryPoint(string $path): void
+    {
+        $this->container->instance('entry_point', $path);
+    }
+
     public function registerCommands(Application $app): void
     {
         // Migrations.

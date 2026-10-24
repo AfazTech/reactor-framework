@@ -18,6 +18,9 @@ use Reactor\Core\Paths;
  * reliably return the PHP process's own PID on every platform, so the
  * spawning method does not attempt to capture it and instead relies on
  * LockManager to write the real PID once the child is fully up.
+ *
+ * The CLI entry point path is resolved through EntryPointResolver,
+ * which avoids hardcoding a filename and works with any project layout.
  */
 class BotProcessManager
 {
@@ -38,6 +41,7 @@ class BotProcessManager
     public function __construct(
         private Paths $paths,
         private Config $config,
+        private EntryPointResolver $entryPointResolver,
     ) {
     }
 
@@ -147,7 +151,8 @@ class BotProcessManager
     }
 
     /**
-     * Spawn a new detached bot process running `reactor.php start`.
+     * Spawn a new detached bot process running the resolved entry point
+     * with the "start" argument.
      *
      * The caller should poll getRunningPid() afterwards to confirm the
      * child actually bootstrapped and acquired its lock file.
@@ -156,9 +161,9 @@ class BotProcessManager
      */
     public function spawnDetached(): bool
     {
-        $reactorScript = $this->paths->base() . '/reactor.php';
+        $reactorScript = $this->entryPointResolver->resolve();
 
-        if (!file_exists($reactorScript)) {
+        if ($reactorScript === null) {
             return false;
         }
 

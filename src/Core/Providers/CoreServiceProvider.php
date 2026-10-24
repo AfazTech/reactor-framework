@@ -2,6 +2,7 @@
 
 namespace Reactor\Core\Providers;
 
+use Reactor\Console\Support\EntryPointResolver;
 use Reactor\Core\Container;
 use Reactor\Core\Config;
 use Reactor\Core\Language;
@@ -166,6 +167,16 @@ class CoreServiceProvider implements ServiceProviderInterface
             );
         });
 
+        // Resolves the CLI entry point without assuming a fixed filename.
+        // Honours an explicit Container::instance('entry_point', __FILE__)
+        // when the project-level default (base()/reactor) is absent.
+        $container->singleton(EntryPointResolver::class, function ($c) {
+            return new EntryPointResolver(
+                $c->get(Paths::class),
+                $c->get(Container::class)
+            );
+        });
+
         $container->singleton(Router::class, function ($c) {
             return new Router(
                 $c->get(Container::class),
@@ -192,20 +203,8 @@ class CoreServiceProvider implements ServiceProviderInterface
         // so all consumers share the same connection; the manager, the
         // failed-jobs repository, the restart signal and the worker are
         // all singletons for the same reason.
-        //
-        // retry_after is read from config so that each application can
-        // tune the orphan-recovery window without touching the driver.
-        // The default (90 seconds) mirrors Laravel's convention and
-        // works with the default timeout of 60 seconds.
         $container->singleton(QueueManagerInterface::class, function ($c) {
-            $config = $c->get(Config::class);
-            $retryAfter = (int) $config->get('queue.retry_after', 90);
-
-            return new DatabaseQueue(
-                $c->get(DatabaseManagerInterface::class),
-                (string) $config->get('queue.table', 'jobs'),
-                $retryAfter
-            );
+            return new DatabaseQueue($c->get(DatabaseManagerInterface::class));
         });
 
         $container->singleton(QueueManager::class, function ($c) {

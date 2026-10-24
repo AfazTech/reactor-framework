@@ -1,6 +1,7 @@
 <?php
 namespace Reactor\Console\Commands;
 
+use Reactor\Console\Support\EntryPointResolver;
 use Reactor\Core\Paths;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -17,12 +18,17 @@ use Symfony\Component\Console\Output\OutputInterface;
  * immediately without manually restarting the worker.
  *
  * Requires the exec() function. Use queue:work in production.
+ *
+ * The entry point path is resolved through EntryPointResolver, which
+ * avoids hardcoding a filename and works with any project layout.
  */
 #[AsCommand(name: 'queue:listen', description: 'Process jobs, reloading the application on every iteration')]
 class QueueListenCommand extends Command
 {
-    public function __construct(private Paths $paths)
-    {
+    public function __construct(
+        private Paths $paths,
+        private EntryPointResolver $entryPointResolver,
+    ) {
         parent::__construct();
     }
 
@@ -76,7 +82,11 @@ class QueueListenCommand extends Command
 
         $script = $this->resolveScriptPath();
         if ($script === null) {
-            $output->writeln('<error>Unable to locate the reactor.php CLI entry point.</error>');
+            $output->writeln(
+                '<error>Unable to locate the application CLI entry point. '
+                . 'Ensure a "reactor" file exists at the project root, or set '
+                . "Container::instance('entry_point', __FILE__) in your bootstrap.</error>"
+            );
             return Command::FAILURE;
         }
 
@@ -107,21 +117,6 @@ class QueueListenCommand extends Command
 
     private function resolveScriptPath(): ?string
     {
-        $candidate = $this->paths->base() . '/reactor.php';
-        if (file_exists($candidate)) {
-            return $candidate;
-        }
-
-        $fromServer = $_SERVER['SCRIPT_FILENAME'] ?? null;
-        if (is_string($fromServer) && $fromServer !== '' && file_exists($fromServer)) {
-            return $fromServer;
-        }
-
-        $fromArgv = $GLOBALS['argv'][0] ?? null;
-        if (is_string($fromArgv) && $fromArgv !== '' && file_exists($fromArgv)) {
-            return $fromArgv;
-        }
-
-        return null;
+        return $this->entryPointResolver->resolve();
     }
 }
