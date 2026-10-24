@@ -9,6 +9,7 @@ use Reactor\Attributes\OnUpdate;
 use Reactor\Attributes\Fallback;
 use Reactor\Attributes\Group;
 use Reactor\Attributes\UseMiddleware;
+use Reactor\Attributes\Reply;
 use Reactor\Core\Container;
 use Reactor\Contracts\LoggerInterface;
 
@@ -264,8 +265,9 @@ class HandlerRegistry
     private function extractMetadata(\ReflectionClass $reflection, string $className): array
     {
         $metadata = [
-            'groups'          => [],
-            'useMiddlewares'  => [],
+            'groups'         => [],
+            'useMiddlewares' => [],
+            'requiresReply'  => null,
         ];
 
         $groupAttr = $reflection->getAttributes(Group::class);
@@ -279,6 +281,12 @@ class HandlerRegistry
         if (!empty($useAttr)) {
             $use = $useAttr[0]->newInstance();
             $metadata['useMiddlewares'] = $use->middlewares;
+        }
+
+        $replyAttr = $reflection->getAttributes(Reply::class);
+        if (!empty($replyAttr)) {
+            $reply = $replyAttr[0]->newInstance();
+            $metadata['requiresReply'] = $reply->only;
         }
 
         $this->handlerMetadata[$className] = $metadata;
@@ -397,7 +405,8 @@ class HandlerRegistry
 
     public function getHandlerMetadata(string $className): array
     {
-        return $this->handlerMetadata[$className] ?? ['groups' => [], 'useMiddlewares' => []];
+        return $this->handlerMetadata[$className]
+            ?? ['groups' => [], 'useMiddlewares' => [], 'requiresReply' => null];
     }
 
     public function getStep(string $stepName): ?array
@@ -417,7 +426,7 @@ class HandlerRegistry
             'next'           => $nextStep,
             'autoClear'      => $autoClear,
             'allowedUpdates' => $allowedUpdates,
-            'metadata'       => ['groups' => [], 'useMiddlewares' => []],
+            'metadata'       => ['groups' => [], 'useMiddlewares' => [], 'requiresReply' => null],
         ];
         $this->logger->debug('Step handler registered dynamically', ['name' => $stepName, 'class' => $handlerClass]);
     }
@@ -427,7 +436,7 @@ class HandlerRegistry
         $this->registerFallbackCandidate(
             $handlerClass,
             $priority,
-            ['groups' => [], 'useMiddlewares' => []]
+            ['groups' => [], 'useMiddlewares' => [], 'requiresReply' => null]
         );
     }
 }

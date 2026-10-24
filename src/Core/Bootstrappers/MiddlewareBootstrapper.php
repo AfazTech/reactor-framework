@@ -5,6 +5,7 @@ use Reactor\Core\Container;
 use Reactor\Core\BootstrapperInterface;
 use Reactor\Attributes\Middleware as MiddlewareAttr;
 use Reactor\Attributes\OnUpdate;
+use Reactor\Attributes\Reply;
 use Reactor\Enums\MiddlewareMode;
 use Reactor\Contracts\LoggerInterface;
 
@@ -80,12 +81,19 @@ class MiddlewareBootstrapper implements BootstrapperInterface
                     $allowedTypes = $onUpdate->types;
                 }
 
+                $replyAttr = $reflection->getAttributes(Reply::class);
+                $requiresReply = null;
+                if (!empty($replyAttr)) {
+                    $requiresReply = $replyAttr[0]->newInstance()->only;
+                }
+
                 $middlewares[] = [
                     'class'          => $className,
                     'priority'       => $priority,
                     'mode'           => $mode,
                     'groups'         => $groups,
                     'allowedUpdates' => $allowedTypes,
+                    'requiresReply'  => $requiresReply,
                 ];
                 $discoveredCount++;
                 $logger->debug("Discovered middleware", [

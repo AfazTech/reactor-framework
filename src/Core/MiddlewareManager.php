@@ -5,6 +5,7 @@ namespace Reactor\Core;
 use Reactor\Contracts\MiddlewareInterface;
 use Reactor\Core\Container;
 use Reactor\Core\ErrorHandler;
+use Reactor\Core\Traits\ReplyDetector;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Enums\MiddlewareMode;
 
@@ -13,6 +14,8 @@ use Reactor\Enums\MiddlewareMode;
  */
 class MiddlewareManager
 {
+    use ReplyDetector;
+
     private array $middlewares = [];
     private Container $container;
     private ErrorHandler $errorHandler;
@@ -40,7 +43,8 @@ class MiddlewareManager
      *     priority: int,
      *     mode: MiddlewareMode,
      *     groups: array,
-     *     allowedUpdates: array
+     *     allowedUpdates: array,
+     *     requiresReply?: bool|null
      * }> $middlewares
      */
     public function setMiddlewares(array $middlewares): void
@@ -153,6 +157,11 @@ class MiddlewareManager
                 continue;
             }
 
+            // Check the reply requirement.
+            if (!$this->matchesReplyRequirement($mw, $update)) {
+                continue;
+            }
+
             try {
                 $middleware = $this->container->get($class);
                 if (!$middleware instanceof MiddlewareInterface) {
@@ -186,5 +195,21 @@ class MiddlewareManager
     private function allowsUpdateType(array $allowed, string $type): bool
     {
         return in_array('any', $allowed, true) || in_array($type, $allowed, true);
+    }
+
+    /**
+     * Check whether the update satisfies the middleware's reply requirement.
+     *
+     * A missing or null $requiresReply means "no constraint". When it is
+     * true, the update must be a reply; when false, it must not be.
+     */
+    private function matchesReplyRequirement(array $middlewareConfig, array $update): bool
+    {
+        $requiresReply = $middlewareConfig['requiresReply'] ?? null;
+        if ($requiresReply === null) {
+            return true;
+        }
+        $isReply = $this->isReplyUpdate($update);
+        return $requiresReply === true ? $isReply : !$isReply;
     }
 }

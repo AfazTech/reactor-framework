@@ -5,14 +5,16 @@ namespace Reactor\Core\Routing;
 use Reactor\Core\Container;
 use Reactor\Core\HandlerExecution;
 use Reactor\Core\UpdateTypeResolver;
+use Reactor\Core\Traits\FromIdExtractor;
+use Reactor\Core\Traits\ReplyDetector;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Contracts\LanguageInterface;
 use Reactor\Contracts\UserProviderInterface;
-use Reactor\Core\Traits\FromIdExtractor;
 
 class HandlerMatcher
 {
     use FromIdExtractor;
+    use ReplyDetector;
 
     private HandlerRegistry $registry;
     private Container $container;
@@ -57,7 +59,8 @@ class HandlerMatcher
         if ($callbackData !== null) {
             foreach ($this->registry->getCallbacks() as $pattern => $config) {
                 if ($this->matchesCallbackData($callbackData, $pattern) &&
-                    $this->allowsUpdateType($config['allowedUpdates'], $updateType)) {
+                    $this->allowsUpdateType($config['allowedUpdates'], $updateType) &&
+                    $this->matchesReplyRequirement($config['metadata'], $update)) {
                     $this->logger->debug('Callback matched', ['pattern' => $pattern, 'class' => $config['class']]);
                     return $this->buildExecution($config['class'], $update, [], $config['metadata']);
                 }
@@ -68,6 +71,9 @@ class HandlerMatcher
                     continue;
                 }
                 if (!$this->allowsUpdateType($patternConfig['handler']['allowedUpdates'], $updateType)) {
+                    continue;
+                }
+                if (!$this->matchesReplyRequirement($patternConfig['handler']['metadata'], $update)) {
                     continue;
                 }
                 if (preg_match($patternConfig['pattern'], $callbackData, $matches)) {
@@ -96,7 +102,8 @@ class HandlerMatcher
                 $commands = $this->registry->getCommands();
 
                 if (isset($commands[$commandName]) &&
-                    $this->allowsUpdateType($commands[$commandName]['allowedUpdates'], $updateType)) {
+                    $this->allowsUpdateType($commands[$commandName]['allowedUpdates'], $updateType) &&
+                    $this->matchesReplyRequirement($commands[$commandName]['metadata'], $update)) {
                     $this->logger->debug('Command matched', [
                         'command'  => $commandName,
                         'class'    => $commands[$commandName]['class'],
@@ -131,6 +138,9 @@ class HandlerMatcher
                 if (!$this->allowsUpdateType($config['allowedUpdates'], $updateType)) {
                     continue;
                 }
+                if (!$this->matchesReplyRequirement($config['metadata'], $update)) {
+                    continue;
+                }
                 $translatedText = $this->language->get($textKey, $lang);
                 if ($text === $translatedText) {
                     $this->logger->debug('Text/Button matched', [
@@ -147,6 +157,9 @@ class HandlerMatcher
                     continue;
                 }
                 if (!$this->allowsUpdateType($patternConfig['handler']['allowedUpdates'], $updateType)) {
+                    continue;
+                }
+                if (!$this->matchesReplyRequirement($patternConfig['handler']['metadata'], $update)) {
                     continue;
                 }
                 if (preg_match($patternConfig['pattern'], $text, $matches)) {
@@ -171,7 +184,8 @@ class HandlerMatcher
             $currentStep = $this->userProvider->getStep($fromId);
             $steps = $this->registry->getSteps();
             if ($currentStep !== null && isset($steps[$currentStep]) &&
-                $this->allowsUpdateType($steps[$currentStep]['allowedUpdates'], $updateType)) {
+                $this->allowsUpdateType($steps[$currentStep]['allowedUpdates'], $updateType) &&
+                $this->matchesReplyRequirement($steps[$currentStep]['metadata'], $update)) {
                 $stepConfig = $steps[$currentStep];
                 $this->logger->debug('Step matched', [
                     'step'  => $currentStep,
@@ -183,7 +197,7 @@ class HandlerMatcher
 
         // 5. Fallback.
         $fallback = $this->registry->getFallbackHandler();
-        if ($fallback !== null) {
+        if ($fallback !== null && $this->matchesReplyRequirement($fallback['metadata'], $update)) {
             $this->logger->debug('Using fallback handler', ['class' => $fallback['class']]);
             return $this->buildExecution($fallback['class'], $update, [], $fallback['metadata']);
         }
@@ -219,5 +233,21 @@ class HandlerMatcher
     private function allowsUpdateType(array $allowed, string $type): bool
     {
         return in_array('any', $allowed, true) || in_array($type, $allowed, true);
+    }
+
+    /**
+     * Check whether the update satisfies the handler's reply requirement.
+     *
+     * A missing or null $requiresReply means "no constraint". When it is
+     * true, the update must be a reply; when false, it must not be.
+     */
+    private function matchesReplyRequirement(array $metadata, array $update): bool
+    {
+        $requiresReply = $metadata['requiresReply'] ?? null;
+        if ($requiresReply === null) {
+            return true;
+        }
+        $isReply = $this->isReplyUpdate($update);
+        return $requiresReply === true ? $isReply : !$isReply;
     }
 }

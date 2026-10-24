@@ -16,14 +16,13 @@ class HandlerExecution
             'useMiddlewares' => [],
             'allowedUpdates' => [],
             'priority' => 0,
+            'requiresReply' => null,
         ],
         public ?array $update = null
     ) {}
 
     /**
      * Check whether a handler was found.
-     *
-     * @return bool
      */
     public function hasHandler(): bool
     {
