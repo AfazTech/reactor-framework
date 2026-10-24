@@ -19,21 +19,12 @@ use Symfony\Component\Console\Output\OutputInterface;
  * only prints the setup instructions and exits, because updates are
  * delivered by Telegram over HTTP in that case.
  *
- * Before any bot lifecycle work happens, the command calls getMe() and
- * aborts with a non-zero exit code if that call fails. Rationale:
- *
- *   - An invalid token (PermanentException) would make the very first
- *     getUpdates fail with the same 401, so polling could never succeed.
- *   - An unreachable API (TransientException) would make getUpdates
- *     spam backoff warnings while the operator still sees a "running"
- *     banner, which is misleading.
- *   - Showing the bot's identity (name, ID, username, deep links) is
- *     only meaningful once getMe has actually succeeded.
- *
- * Because failure is surfaced before LockManager::acquire() and before
- * Poller::start(), no stale locks or half-booted state are created. The
- * operator retries by fixing the token or the network and re-running
- * the command.
+ * Ordering matters. Before anything else the command performs a
+ * read-only lock check so that a second invocation fails immediately
+ * with a clear message and does not waste a getMe call, emit a
+ * misleading "running" banner, or risk a partial bootstrap. Only after
+ * the lock is known to be free does it identify the bot via getMe and
+ * start polling (which acquires the same lock for real).
  */
 #[AsCommand(name: 'start', description: 'Start the bot (polling or webhook mode)')]
 class StartCommand extends Command
@@ -49,17 +40,29 @@ class StartCommand extends Command
     {
         $mode = $this->app->getConfig()->getBotMode();
 
+        // Lock check FIRST — before any output, network call, or
+        // bootstrap side effect. Only meaningful in polling mode
+        // because the lock file is named {app}_polling.lock and
+        // webhook mode never acquires it.
+        if ($mode === 'polling') {
+            $lockManager = $this->app->getPollingLockManager();
+            if ($lockManager !== null) {
+                $runningPid = $lockManager->isHeldByAnotherProcess();
+                if ($runningPid !== null) {
+                    $output->writeln('<error>❌ Bot is already running (PID: ' . $runningPid . ').</error>');
+                    $output->writeln('<comment>   Use ./reactor stop to stop it first.</comment>');
+                    $this->logger->warning('Start aborted: bot is already running', ['pid' => $runningPid]);
+                    return Command::FAILURE;
+                }
+            }
+        }
+
         $output->writeln('========================================');
         $output->writeln('⚡ REACTOR BOT');
         $output->writeln('========================================');
         $output->writeln('✓ Bot initialized successfully');
         $output->writeln('✓ Mode: ' . strtoupper($mode));
 
-        // Fail-fast: getMe doubles as a token and network check. If it
-        // cannot succeed here, the first getUpdates in polling mode (or
-        // the first webhook delivery) would fail for the same reason.
-        // Aborting now gives the operator an actionable error instead
-        // of a misleading "running" banner followed by silent failure.
         if (!$this->identifyBot($output)) {
             return Command::FAILURE;
         }
@@ -83,14 +86,28 @@ class StartCommand extends Command
 
         try {
             $this->app->start();
+        } catch (\RuntimeException $e) {
+            // A concurrent process may have acquired the lock between
+            // the read-only pre-check above and App::start(). Handle
+            // that race with the same clean message as the pre-check
+            // so the operator never sees a raw vendor path.
+            if (str_starts_with($e->getMessage(), 'Lock file exists and process is running')) {
+                $output->writeln('<error>❌ Bot is already running.</error>');
+                $output->writeln('<comment>   Another process acquired the lock while this command was starting.</comment>');
+                $this->logger->warning('Start aborted: concurrent lock acquisition', ['error' => $e->getMessage()]);
+                return Command::FAILURE;
+            }
+
+            $this->logger->critical('Fatal error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString(),
+            ]);
+            $output->writeln('<error>❌ Error: ' . $e->getMessage() . '</error>');
+            return Command::FAILURE;
         } catch (\Throwable $e) {
             $this->logger->critical('Fatal error: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
             ]);
-
             $output->writeln('<error>❌ Error: ' . $e->getMessage() . '</error>');
-            $output->writeln('<error>File: ' . $e->getFile() . ':' . $e->getLine() . '</error>');
-
             return Command::FAILURE;
         }
 

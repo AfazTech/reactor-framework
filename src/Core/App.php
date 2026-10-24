@@ -281,6 +281,19 @@ class App
         return $this->client;
     }
 
+    /**
+     * Get the lock manager that guards the polling loop.
+     *
+     * Exposed so that CLI commands (most importantly `start`) can
+     * perform a read-only pre-flight check via
+     * LockManager::isHeldByAnotherProcess() before spending time on
+     * network calls or emitting any banner output.
+     */
+    public function getPollingLockManager(): ?LockManager
+    {
+        return $this->pollingLockManager;
+    }
+
     public function getConfig(): Config
     {
         return $this->config;
