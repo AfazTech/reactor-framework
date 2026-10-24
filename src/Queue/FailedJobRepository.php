@@ -11,6 +11,12 @@ use Reactor\Contracts\LoggerInterface;
  * so applications that never trigger a failure pay no schema cost. The
  * queue:failed-table command is provided for users who prefer a
  * versioned migration instead.
+ *
+ * Lazy creation is intentionally tolerant of a race between two
+ * workers that observe a missing table at the same time: the second
+ * create() attempt (which fails because the first one already
+ * committed the DDL) is swallowed. Without that, a concurrent failure
+ * would lose the record of one of the two failed jobs.
  */
 class FailedJobRepository
 {
@@ -28,15 +34,29 @@ class FailedJobRepository
             return;
         }
 
-        $this->db->schema()->create(self::TABLE, function ($table) {
-            $table->id();
-            $table->string('queue')->index();
-            $table->text('payload');
-            $table->text('exception');
-            $table->integer('failed_at')->index();
-        });
+        try {
+            $this->db->schema()->create(self::TABLE, function ($table) {
+                $table->id();
+                $table->string('queue')->index();
+                $table->text('payload');
+                $table->text('exception');
+                $table->integer('failed_at')->index();
+            });
+            $this->logger->info('Failed jobs table created');
+        } catch (\Throwable $e) {
+            // Two workers can enter this method at the same time on a
+            // fresh database: both see hasTable() === false, both call
+            // create(), and the second one fails with "table already
+            // exists". Swallow that specific failure and let the
+            // subsequent insert proceed against the table that the
+            // other worker just created.
+            if ($this->db->schema()->hasTable(self::TABLE)) {
+                $this->logger->debug('Failed jobs table created concurrently, continuing');
+                return;
+            }
 
-        $this->logger->info('Failed jobs table created');
+            throw $e;
+        }
     }
 
     public function log(string $queue, string $payload, \Throwable $exception): int

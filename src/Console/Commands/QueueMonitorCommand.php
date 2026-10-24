@@ -39,14 +39,27 @@ class QueueMonitorCommand extends Command
             $queues = ['default'];
         }
 
+        $retryAfter = $this->manager->retryAfter();
+
         $table = new Table($output);
-        $table->setHeaders(['Queue', 'Pending Jobs']);
+        $table->setHeaders(['Queue', 'Pending Jobs', 'Stale (orphaned)']);
 
         foreach ($queues as $queue) {
-            $table->addRow([$queue, $this->manager->size($queue)]);
+            $table->addRow([
+                $queue,
+                $this->manager->size($queue),
+                $this->manager->staleCount($queue),
+            ]);
         }
 
         $table->render();
+
+        if ($retryAfter > 0) {
+            $output->writeln(
+                '<comment>Stale reservations older than ' . $retryAfter
+                . 's are reclaimed by the next pop.</comment>'
+            );
+        }
 
         return Command::SUCCESS;
     }

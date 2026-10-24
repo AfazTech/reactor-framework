@@ -192,8 +192,20 @@ class CoreServiceProvider implements ServiceProviderInterface
         // so all consumers share the same connection; the manager, the
         // failed-jobs repository, the restart signal and the worker are
         // all singletons for the same reason.
+        //
+        // retry_after is read from config so that each application can
+        // tune the orphan-recovery window without touching the driver.
+        // The default (90 seconds) mirrors Laravel's convention and
+        // works with the default timeout of 60 seconds.
         $container->singleton(QueueManagerInterface::class, function ($c) {
-            return new DatabaseQueue($c->get(DatabaseManagerInterface::class));
+            $config = $c->get(Config::class);
+            $retryAfter = (int) $config->get('queue.retry_after', 90);
+
+            return new DatabaseQueue(
+                $c->get(DatabaseManagerInterface::class),
+                (string) $config->get('queue.table', 'jobs'),
+                $retryAfter
+            );
         });
 
         $container->singleton(QueueManager::class, function ($c) {

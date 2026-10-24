@@ -64,7 +64,7 @@ class QueueWorkCommand extends Command
                 'max',
                 'm',
                 InputOption::VALUE_OPTIONAL,
-                'Maximum jobs to process before exiting (0 = unlimited)',
+                'Maximum jobs to process before exiting (0 = unlimited, per worker)',
                 0
             )
             ->addOption(

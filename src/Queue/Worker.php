@@ -23,9 +23,18 @@ use function Amp\delay;
  * cannot be interrupted; for those, the worker abandons waiting and
  * continues with the next job, leaving the leaked fiber to finish on
  * its own.
+ *
+ * Graceful shutdown: SIGTERM and SIGINT set a stop flag. The worker
+ * finishes the current job, then exits. Without this handler a plain
+ * `kill <pid>` would terminate the process mid-job, leaving a reserved
+ * row that no other worker can reclaim until retry_after elapses. The
+ * signal handler only works when ext-pcntl is available; on Windows
+ * the flag is simply never set and the supervisor handles termination.
  */
 class Worker
 {
+    private bool $stopRequested = false;
+
     public function __construct(
         private QueueManager $manager,
         private Container $container,
@@ -42,6 +51,8 @@ class Worker
     {
         $startedAt = time();
         $processed = 0;
+
+        $this->installSignalHandlers();
 
         $this->logger->info('Queue worker started', [
             'queues'  => (array) $options->queue,
@@ -75,6 +86,31 @@ class Worker
         $this->logger->info('Queue worker stopped', ['processed' => $processed]);
 
         return $processed;
+    }
+
+    /**
+     * Install pcntl signal handlers that request a graceful shutdown.
+     *
+     * SIGTERM and SIGINT both flip the internal stop flag. The loop
+     * reads it in shouldStop() between jobs, so the job currently
+     * running is completed and its row is deleted or released before
+     * the process exits. No-op when ext-pcntl is not available.
+     */
+    private function installSignalHandlers(): void
+    {
+        if (!function_exists('pcntl_async_signals') || !function_exists('pcntl_signal')) {
+            return;
+        }
+
+        pcntl_async_signals(true);
+
+        $handler = function (int $signal): void {
+            $this->stopRequested = true;
+            $this->logger->info('Graceful shutdown requested', ['signal' => $signal]);
+        };
+
+        pcntl_signal(SIGTERM, $handler);
+        pcntl_signal(SIGINT, $handler);
     }
 
     private function process(array $job, WorkerOptions $options): void
@@ -161,6 +197,10 @@ class Worker
 
     private function shouldStop(WorkerOptions $options, int $startedAt, int $processed): bool
     {
+        if ($this->stopRequested) {
+            return true;
+        }
+
         if ($options->maxJobs > 0 && $processed >= $options->maxJobs) {
             return true;
         }

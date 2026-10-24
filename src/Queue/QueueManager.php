@@ -54,34 +54,40 @@ class QueueManager
     }
 
     /**
+     * Count jobs in the queue whose reservation has exceeded retry_after.
+     *
+     * Returns 0 when the active driver does not support retry_after
+     * (any driver other than DatabaseQueue).
+     */
+    public function staleCount(string $queue): int
+    {
+        if ($this->driver instanceof DatabaseQueue) {
+            return $this->driver->staleCount($queue);
+        }
+
+        return 0;
+    }
+
+    /**
+     * Get the retry_after window used by the active driver.
+     *
+     * Returns 0 when the driver does not use a time-based reservation
+     * window (any driver other than DatabaseQueue).
+     */
+    public function retryAfter(): int
+    {
+        if ($this->driver instanceof DatabaseQueue) {
+            return $this->driver->getRetryAfter();
+        }
+
+        return 0;
+    }
+
+    /**
      * Resolve a job instance from the container.
      */
     public function resolve(string $class): object
     {
         return $this->container->get($class);
-    }
-
-    /**
-     * Process up to $maxJobs jobs from the given queue.
-     *
-     * @deprecated Use Reactor\Queue\Worker::work() instead. Kept for
-     *             backward compatibility with older applications.
-     */
-    public function process(string $queue = 'default', int $maxJobs = 10): void
-    {
-        for ($i = 0; $i < $maxJobs; $i++) {
-            $job = $this->driver->pop($queue);
-            if (!$job) {
-                break;
-            }
-
-            try {
-                $jobInstance = $this->container->get($job['payload']['job']);
-                $jobInstance->handle($job['payload']['data'] ?? []);
-                $this->driver->delete($job);
-            } catch (\Throwable $e) {
-                $this->driver->release($job, 60);
-            }
-        }
     }
 }

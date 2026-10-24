@@ -16,6 +16,17 @@ use Reactor\Contracts\DatabaseManagerInterface;
  * that two workers cannot reserve the same job. On SQLite, transactions
  * are serialized by the engine itself, so no explicit row lock is needed.
  *
+ * Orphan recovery: a reserved job whose worker died before calling
+ * delete() or release() would otherwise be stuck forever. The pop query
+ * therefore treats any reservation older than $retryAfter seconds as
+ * available again, matching Laravel's retry_after semantics. The safe
+ * configuration is:
+ *
+ *     job_max_duration  <  timeout  <  retry_after
+ *
+ * When timeout >= retry_after the same job can be picked up by a second
+ * worker while the first is still running it.
+ *
  * Priority queues: pop() accepts either a single queue name or an array
  * of names. When an array is given, each queue is tried in order and the
  * first non-empty one is used.
@@ -24,11 +35,24 @@ class DatabaseQueue implements QueueManagerInterface
 {
     private DatabaseManagerInterface $db;
     private string $table;
+    private int $retryAfter;
 
-    public function __construct(DatabaseManagerInterface $db, string $table = 'jobs')
-    {
+    public function __construct(
+        DatabaseManagerInterface $db,
+        string $table = 'jobs',
+        int $retryAfter = 90
+    ) {
         $this->db = $db;
         $this->table = $table;
+        $this->retryAfter = max(1, $retryAfter);
+    }
+
+    /**
+     * Get the retry_after window in seconds.
+     */
+    public function getRetryAfter(): int
+    {
+        return $this->retryAfter;
     }
 
     public function push(string $jobClass, array $data = [], string $queue = 'default', int $delay = 0): void
@@ -62,9 +86,14 @@ class DatabaseQueue implements QueueManagerInterface
         $this->db->beginTransaction();
 
         try {
+            $staleThreshold = time() - $this->retryAfter;
+
             $query = $this->db->table($this->table)
                 ->where('queue', $queue)
-                ->whereNull('reserved_at')
+                ->where(function ($q) use ($staleThreshold) {
+                    $q->whereNull('reserved_at')
+                      ->orWhere('reserved_at', '<=', $staleThreshold);
+                })
                 ->where('available_at', '<=', time())
                 ->orderBy('id');
 
@@ -125,6 +154,26 @@ class DatabaseQueue implements QueueManagerInterface
             ->where('queue', $queue)
             ->whereNull('reserved_at')
             ->where('available_at', '<=', time())
+            ->count();
+    }
+
+    /**
+     * Count jobs in the queue whose reservation has exceeded retry_after.
+     *
+     * These are almost always orphans left behind by a worker that died
+     * mid-flight. They will be reclaimed by the next pop() call on this
+     * queue, but surfacing the count is essential for operators: without
+     * it, queue:monitor reports "0 pending" while the workers are
+     * actually running behind.
+     */
+    public function staleCount(string $queue): int
+    {
+        $staleThreshold = time() - $this->retryAfter;
+
+        return (int) $this->db->table($this->table)
+            ->where('queue', $queue)
+            ->whereNotNull('reserved_at')
+            ->where('reserved_at', '<=', $staleThreshold)
             ->count();
     }
 
