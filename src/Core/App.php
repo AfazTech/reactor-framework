@@ -176,6 +176,12 @@ class App
      * part of the bootstrap chain, or when it was skipped because no
      * token is configured, a descriptive RuntimeException is thrown so
      * the operator knows exactly what is missing.
+     *
+     * An onError handler is registered before onUpdate so that
+     * recoverable poll-loop failures (transient transport errors,
+     * HTTP 5xx, rate limits, reconnect failures) are written to the
+     * application log at warning level. Handler failures that somehow
+     * escape the normal error pipeline are logged at error level.
      */
     public function start(): void
     {
@@ -203,6 +209,33 @@ class App
         $this->pollingLockManager->acquire();
 
         $this->logger->info('=== STARTING BOT POLLING ===');
+
+        $this->poller->onError(function (\Throwable $e, array $update, string $type): void {
+            $context = [
+                'exception' => get_class($e),
+                'message'   => $e->getMessage(),
+                'type'      => $type,
+            ];
+
+            if ($type === 'poller') {
+                // Poll-loop failures (transient transport errors,
+                // HTTP 5xx, rate limits, reconnect failures). Neili's
+                // Poller retries with backoff, so these are warnings
+                // rather than errors.
+                $this->logger->warning('Poller will retry after a recoverable error', $context);
+                return;
+            }
+
+            // Handler failures are normally caught inside
+            // UpdateProcessor, HandlerInvoker and MiddlewareProcessor
+            // and logged by the ErrorHandler. Reaching this branch
+            // means a handler escaped those layers, which indicates a
+            // wiring or configuration problem rather than a normal
+            // runtime error.
+            $context['update'] = $update;
+            $context['trace'] = $e->getTraceAsString();
+            $this->logger->error('Update handler failed outside the normal error pipeline', $context);
+        });
 
         $this->poller->onUpdate(function ($update) {
             // Final safety net: UpdateProcessor rethrows fatal \Error
