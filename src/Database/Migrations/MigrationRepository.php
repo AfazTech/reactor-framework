@@ -140,6 +140,7 @@ class MigrationRepository
                 'migration' => $name,
                 'batch'     => $row->batch ?? null,
                 'ran'       => $row !== null,
+                'ran_at'    => $row->created_at ?? null,
                 'source'    => $info['source'],
             ];
         }

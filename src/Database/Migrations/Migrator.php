@@ -18,6 +18,10 @@ use Reactor\Core\Container;
  * The Migrator does not assume a fixed migration path; it consumes a
  * MigrationRegistrar that has already been populated by the application
  * and by any packages or extensions.
+ *
+ * A MigrationEventListenerInterface can be attached to render
+ * per-migration progress from a command. The listener is forwarded to
+ * the underlying MigrationRunner.
  */
 class Migrator
 {
@@ -53,6 +57,17 @@ class Migrator
     }
 
     /**
+     * Attach an optional listener that receives per-migration events.
+     *
+     * Passing null detaches the current listener. The listener is
+     * forwarded to the underlying MigrationRunner.
+     */
+    public function setListener(?MigrationEventListenerInterface $listener): void
+    {
+        $this->runner->setListener($listener);
+    }
+
+    /**
      * Prepare migration infrastructure (create tracking table if needed).
      *
      * Idempotent and safe to call multiple times. Invoked automatically
@@ -72,6 +87,21 @@ class Migrator
     {
         $this->ensureReady();
         return $this->repository->status();
+    }
+
+    /**
+     * Return the batch numbers that a rollback($step) call would target.
+     *
+     * Used by the rollback command to decide whether there is anything
+     * to roll back and to render the batch count without duplicating
+     * the "getBatches + empty check" logic.
+     *
+     * @return array<int, int>
+     */
+    public function getBatchesForRollback(int $steps = 1): array
+    {
+        $this->ensureReady();
+        return $this->repository->getBatches($steps);
     }
 
     public function run(): void

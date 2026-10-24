@@ -1,6 +1,7 @@
 <?php
 namespace Reactor\Console\Commands;
 
+use Reactor\Console\Support\ConsoleMigrationListener;
 use Reactor\Database\Migrations\Migrator;
 use Reactor\Contracts\LoggerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -30,9 +31,33 @@ class MigrateRollbackCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $step = (int) $input->getOption('step');
+
         try {
-            $this->migrator->rollback($step);
+            $this->migrator->ensureReady();
+
+            $batches = $this->migrator->getBatchesForRollback($step);
+            if (empty($batches)) {
+                $output->writeln('<info>Nothing to rollback.</info>');
+                return Command::SUCCESS;
+            }
+
+            $output->writeln(sprintf(
+                '<comment>Rolling back %d batch(es)...</comment>',
+                count($batches)
+            ));
+            $output->writeln('');
+
+            $this->migrator->setListener(new ConsoleMigrationListener($output));
+
+            try {
+                $this->migrator->rollback($step);
+            } finally {
+                $this->migrator->setListener(null);
+            }
+
+            $output->writeln('');
             $output->writeln('<info>Rollback completed.</info>');
+
             return Command::SUCCESS;
         } catch (\Throwable $e) {
             $output->writeln('<error>Error: ' . $e->getMessage() . '</error>');

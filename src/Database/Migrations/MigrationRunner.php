@@ -16,6 +16,10 @@ use Reactor\Contracts\LoggerInterface;
  * Drivers known to support transactional DDL (PostgreSQL, SQLite) keep
  * the original behaviour where up()/down() and the tracking insert are
  * committed atomically.
+ *
+ * The runner exposes an optional listener so that commands can render
+ * per-migration progress without having to duplicate the batch and
+ * transaction handling logic.
  */
 class MigrationRunner
 {
@@ -38,12 +42,23 @@ class MigrationRunner
     private DatabaseManagerInterface $db;
     private LoggerInterface $logger;
     private MigrationRepository $repository;
+    private ?MigrationEventListenerInterface $listener = null;
 
     public function __construct(DatabaseManagerInterface $db, LoggerInterface $logger, MigrationRepository $repository)
     {
         $this->db = $db;
         $this->logger = $logger;
         $this->repository = $repository;
+    }
+
+    /**
+     * Attach an optional listener that receives per-migration events.
+     *
+     * Passing null detaches the current listener.
+     */
+    public function setListener(?MigrationEventListenerInterface $listener): void
+    {
+        $this->listener = $listener;
     }
 
     public function run(): void
@@ -65,6 +80,12 @@ class MigrationRunner
     {
         $instance = $this->repository->loadMigration($name);
 
+        if ($this->listener !== null) {
+            $this->listener->onMigrating($name, $batch);
+        }
+
+        $start = microtime(true);
+
         if ($this->supportsSchemaTransactions()) {
             $this->db->transaction(function () use ($instance, $name, $batch) {
                 $instance->up();
@@ -80,6 +101,12 @@ class MigrationRunner
             // (they use hasTable / dropIfExists guards).
             $instance->up();
             $this->repository->markRan($name, $batch);
+        }
+
+        $elapsedMs = (microtime(true) - $start) * 1000.0;
+
+        if ($this->listener !== null) {
+            $this->listener->onMigrated($name, $batch, $elapsedMs);
         }
 
         $this->logger->info("Migration executed: $name");
@@ -102,15 +129,21 @@ class MigrationRunner
     {
         $migrations = $this->repository->getMigrationsByBatch($batch);
         foreach ($migrations as $migration) {
-            $this->rollbackMigration($migration->migration);
+            $this->rollbackMigration($migration->migration, $batch);
             $this->repository->remove($migration->migration);
         }
         $this->logger->info("Rolled back batch: $batch");
     }
 
-    private function rollbackMigration(string $name): void
+    private function rollbackMigration(string $name, int $batch): void
     {
         $instance = $this->repository->loadMigration($name);
+
+        if ($this->listener !== null) {
+            $this->listener->onRollingBack($name, $batch);
+        }
+
+        $start = microtime(true);
 
         if ($this->supportsSchemaTransactions()) {
             $this->db->transaction(function () use ($instance) {
@@ -118,6 +151,12 @@ class MigrationRunner
             });
         } else {
             $instance->down();
+        }
+
+        $elapsedMs = (microtime(true) - $start) * 1000.0;
+
+        if ($this->listener !== null) {
+            $this->listener->onRolledBack($name, $batch, $elapsedMs);
         }
 
         $this->logger->info("Rolled back: $name");
