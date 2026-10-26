@@ -133,7 +133,9 @@ class FileCache implements CacheInterface
             return $default;
         }
 
-        return $decoded['value'] ?? $default;
+        // array_key_exists() is used instead of ?? so that a cached null
+        // value is returned as null, not replaced by $default.
+        return array_key_exists('value', $decoded) ? $decoded['value'] : $default;
     }
 
     private function doSet(string $key, mixed $value, ?int $ttl = null): bool
@@ -215,13 +217,19 @@ class FileCache implements CacheInterface
         try {
             $handle->lock(LockType::Exclusive);
 
+            // File::read() returns null at EOF; loop until exhausted.
+            // The cache payload is small enough that this typically
+            // completes in one or two reads.
+            $raw = '';
+            while (($chunk = $handle->read()) !== null) {
+                $raw .= $chunk;
+            }
+
             $current = 0;
             $remainingTtl = null;
 
-            $size = $handle->getSize();
-            if ($size > 0) {
-                $raw = $handle->read(length: $size);
-                $decoded = @unserialize((string) $raw, ['allowed_classes' => $this->allowedClasses]);
+            if ($raw !== '') {
+                $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
 
                 if (is_array($decoded)) {
                     $ttl = $decoded['ttl'] ?? null;
@@ -243,6 +251,7 @@ class FileCache implements CacheInterface
 
             $handle->seek(0);
             $handle->truncate(0);
+            $handle->seek(0);
             $handle->write(serialize($data));
 
             return $new;

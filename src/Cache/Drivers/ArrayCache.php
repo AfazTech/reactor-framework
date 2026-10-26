@@ -16,7 +16,14 @@ class ArrayCache implements CacheInterface
     public function get(string $key, mixed $default = null): Future
     {
         $this->clean($key);
-        return Future::complete($this->storage[$key] ?? $default);
+
+        // array_key_exists() is used instead of ?? so that a cached null
+        // value is returned as null, not replaced by $default.
+        if (!array_key_exists($key, $this->storage)) {
+            return Future::complete($default);
+        }
+
+        return Future::complete($this->storage[$key]);
     }
 
     public function set(string $key, mixed $value, ?int $ttl = null): Future
