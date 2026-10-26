@@ -32,6 +32,7 @@ use Reactor\Contracts\ServiceProviderInterface;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Contracts\LanguageInterface;
 use Reactor\Contracts\DatabaseManagerInterface;
+use Reactor\Contracts\AsyncDatabaseManagerInterface;
 use Reactor\Contracts\UserProviderInterface;
 use Reactor\Contracts\QueueManagerInterface;
 use Reactor\Database\Migrations\Migrator;
@@ -61,9 +62,6 @@ class CoreServiceProvider implements ServiceProviderInterface
 {
     public function register(Container $container): void
     {
-        // Fallback bindings for standalone usage. Every one of them is
-        // guarded by has() so that an explicit binding registered by
-        // the host application (or by App) always wins.
         if (!$container->has(Container::class)) {
             $container->instance(Container::class, $container);
         }
@@ -105,58 +103,49 @@ class CoreServiceProvider implements ServiceProviderInterface
             return new EventDispatcher();
         });
 
-        // UpdateTypeResolver has no dependencies and is needed by Router.
         $container->singleton(UpdateTypeResolver::class, function () {
             return new UpdateTypeResolver();
         });
 
-        // CommandParser has no dependencies and is needed by Router.
         $container->singleton(CommandParser::class, function () {
             return new CommandParser();
         });
 
-        // Standalone fallback: when the application skeleton is not
-        // used, no UserProviderInterface binding is registered by the
-        // host project. A no-op implementation keeps Router and the
-        // error handling pipeline functional (default language "en",
-        // no current step).
         if (!$container->has(UserProviderInterface::class)) {
             $container->singleton(UserProviderInterface::class, function () {
                 return new NullUserProvider();
             });
         }
 
-        // Standalone fallback: without a real database manager every
-        // schema/query call throws a descriptive exception. This is
-        // enough for handlers that do not need persistence, and it
-        // fails clearly when database features are actually used.
         if (!$container->has(DatabaseManagerInterface::class)) {
             $container->singleton(DatabaseManagerInterface::class, function ($c) {
                 return new NullDatabaseManager($c->get(LoggerInterface::class));
             });
         }
 
-        // Fallback registrar for standalone framework usage. When the App
-        // class is used (the common case), it binds MigrationRegistrar
-        // with the application source pre-registered before bootstrap,
-        // and this fallback becomes a no-op thanks to the has() check.
+        if (!$container->has(AsyncDatabaseManagerInterface::class)) {
+            $container->singleton(AsyncDatabaseManagerInterface::class, function ($c) {
+                throw new \RuntimeException(
+                    'No async database driver configured. '
+                    . 'Bind AsyncDatabaseManagerInterface in a service provider.'
+                );
+            });
+        }
+
         if (!$container->has(MigrationRegistrar::class)) {
             $container->singleton(MigrationRegistrar::class, function ($c) {
                 return new MigrationRegistrar($c->get(LoggerInterface::class));
             });
         }
 
-        // Package infrastructure. The manifest scans vendor/composer
-        // metadata (or loads its cache); the registrar applies package
-        // config sources, migration sources and class aliases. Both are
-        // singletons so that the manifest is read at most once per
-        // process and the registrar stays consistent.
         $container->singleton(PackageManifest::class, function ($c) {
             $paths = $c->get(Paths::class);
+            $config = $c->get(Config::class);
             return new PackageManifest(
                 $paths,
                 $paths->path('vendor'),
-                $c->get(LoggerInterface::class)
+                $c->get(LoggerInterface::class),
+                $config->isDebugMode()
             );
         });
 
@@ -167,9 +156,6 @@ class CoreServiceProvider implements ServiceProviderInterface
             );
         });
 
-        // Resolves the CLI entry point without assuming a fixed filename.
-        // Honours an explicit Container::instance('entry_point', __FILE__)
-        // when the project-level default (base()/reactor) is absent.
         $container->singleton(EntryPointResolver::class, function ($c) {
             return new EntryPointResolver(
                 $c->get(Paths::class),
@@ -199,10 +185,6 @@ class CoreServiceProvider implements ServiceProviderInterface
             );
         });
 
-        // Queue infrastructure. The driver is bound once as a singleton
-        // so all consumers share the same connection; the manager, the
-        // failed-jobs repository, the restart signal and the worker are
-        // all singletons for the same reason.
         $container->singleton(QueueManagerInterface::class, function ($c) {
             return new DatabaseQueue($c->get(DatabaseManagerInterface::class));
         });
@@ -210,7 +192,8 @@ class CoreServiceProvider implements ServiceProviderInterface
         $container->singleton(QueueManager::class, function ($c) {
             return new QueueManager(
                 $c->get(Container::class),
-                $c->get(QueueManagerInterface::class)
+                $c->get(QueueManagerInterface::class),
+                $c->get(AsyncDatabaseManagerInterface::class)
             );
         });
 

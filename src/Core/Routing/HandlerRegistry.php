@@ -225,12 +225,7 @@ class HandlerRegistry
         foreach (File\listFiles($directory) as $entry) {
             $path = $directory . '/' . $entry;
 
-            $stat = File\getStatus($path);
-            if ($stat === null) {
-                continue;
-            }
-
-            if ($stat['mode'] & 0040000) {
+            if (File\isDirectory($path)) {
                 $this->walk($path, $files);
                 continue;
             }
