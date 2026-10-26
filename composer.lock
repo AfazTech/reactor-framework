@@ -4,24 +4,24 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "81a711435c29d72127b43411375b4418",
+    "content-hash": "c253da9a7d9bdfb1f18a5c69a4d06ed0",
     "packages": [
         {
             "name": "afaztech/neili",
-            "version": "v3.0.2",
+            "version": "v3.2.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/AfazTech/neili.git",
-                "reference": "7b19409e448bda8b42a675726452527eb37bdcbb"
+                "reference": "375f90d9332ee771dbd3ca4d3645860c1a429f74"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/AfazTech/neili/zipball/7b19409e448bda8b42a675726452527eb37bdcbb",
-                "reference": "7b19409e448bda8b42a675726452527eb37bdcbb",
+                "url": "https://api.github.com/repos/AfazTech/neili/zipball/375f90d9332ee771dbd3ca4d3645860c1a429f74",
+                "reference": "375f90d9332ee771dbd3ca4d3645860c1a429f74",
                 "shasum": ""
             },
             "require": {
-                "amphp/file": "^3.2",
+                "amphp/file": "^4",
                 "amphp/http-client": "^5.3",
                 "php": ">=8.1"
             },
@@ -59,9 +59,9 @@
             ],
             "support": {
                 "issues": "https://github.com/AfazTech/neili/issues",
-                "source": "https://github.com/AfazTech/neili/tree/v3.0.2"
+                "source": "https://github.com/AfazTech/neili/tree/v3.2.3"
             },
-            "time": "2026-10-10T17:52:12+00:00"
+            "time": "2026-10-26T11:37:26+00:00"
         },
         {
             "name": "amphp/amp",
@@ -375,16 +375,16 @@
         },
         {
             "name": "amphp/file",
-            "version": "v3.2.0",
+            "version": "v4.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/amphp/file.git",
-                "reference": "28b38a805d2c235bb581d24415e78a42cd03aedc"
+                "reference": "6e122dd70a183750175b68810c24df1b6b95e0a4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/amphp/file/zipball/28b38a805d2c235bb581d24415e78a42cd03aedc",
-                "reference": "28b38a805d2c235bb581d24415e78a42cd03aedc",
+                "url": "https://api.github.com/repos/amphp/file/zipball/6e122dd70a183750175b68810c24df1b6b95e0a4",
+                "reference": "6e122dd70a183750175b68810c24df1b6b95e0a4",
                 "shasum": ""
             },
             "require": {
@@ -400,7 +400,7 @@
                 "amphp/php-cs-fixer-config": "^2",
                 "amphp/phpunit-util": "^3",
                 "phpunit/phpunit": "^9",
-                "psalm/phar": "5.22.2"
+                "psalm/phar": "6.16.1"
             },
             "suggest": {
                 "ext-eio": "^2 || ^3",
@@ -409,7 +409,8 @@
             "type": "library",
             "autoload": {
                 "files": [
-                    "src/functions.php"
+                    "src/functions.php",
+                    "src/Internal/functions.php"
                 ],
                 "psr-4": {
                     "Amp\\File\\": "src"
@@ -448,7 +449,7 @@
             ],
             "support": {
                 "issues": "https://github.com/amphp/file/issues",
-                "source": "https://github.com/amphp/file/tree/v3.2.0"
+                "source": "https://github.com/amphp/file/tree/v4.0.0"
             },
             "funding": [
                 {
@@ -456,7 +457,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2024-12-06T23:39:02+00:00"
+            "time": "2026-05-09T15:40:03+00:00"
         },
         {
             "name": "amphp/hpack",
@@ -694,6 +695,76 @@
             "time": "2026-05-15T23:29:38+00:00"
         },
         {
+            "name": "amphp/mysql",
+            "version": "v3.1.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/amphp/mysql.git",
+                "reference": "ea3a5e07dc3dddc267669337ded2a98f02d86223"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/amphp/mysql/zipball/ea3a5e07dc3dddc267669337ded2a98f02d86223",
+                "reference": "ea3a5e07dc3dddc267669337ded2a98f02d86223",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3",
+                "amphp/parser": "^1.1",
+                "amphp/pipeline": "^1",
+                "amphp/socket": "^2.2",
+                "amphp/sql": "^2",
+                "amphp/sql-common": "^2",
+                "php": ">=8.1"
+            },
+            "require-dev": {
+                "amphp/file": "^3 | ^4",
+                "amphp/php-cs-fixer-config": "^2",
+                "amphp/phpunit-util": "^3",
+                "amphp/process": "^2",
+                "ext-mysqli": "*",
+                "ext-openssl": "*",
+                "phpbench/phpbench": "^1.2.6",
+                "phpunit/phpunit": "^9",
+                "psalm/phar": "6.16.1"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php"
+                ],
+                "psr-4": {
+                    "Amp\\Mysql\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Bob Weinand",
+                    "email": "bobwei9@hotmail.com"
+                },
+                {
+                    "name": "Aaron Piotrowski",
+                    "email": "aaron@trowski.com"
+                }
+            ],
+            "description": "Asynchronous MySQL client for PHP based on Amp.",
+            "support": {
+                "issues": "https://github.com/amphp/mysql/issues",
+                "source": "https://github.com/amphp/mysql/tree/v3.1.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/amphp",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-05-16T19:09:29+00:00"
+        },
+        {
             "name": "amphp/parallel",
             "version": "v2.4.0",
             "source": {
@@ -907,6 +978,78 @@
             "time": "2026-07-26T14:50:43+00:00"
         },
         {
+            "name": "amphp/postgres",
+            "version": "v2.2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/amphp/postgres.git",
+                "reference": "b68c4d5929d0ec1701781dbbb0bb81dd8d0a42d7"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/amphp/postgres/zipball/b68c4d5929d0ec1701781dbbb0bb81dd8d0a42d7",
+                "reference": "b68c4d5929d0ec1701781dbbb0bb81dd8d0a42d7",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3",
+                "amphp/pipeline": "^1",
+                "amphp/sql": "^2",
+                "amphp/sql-common": "^2",
+                "php": ">=8.1"
+            },
+            "require-dev": {
+                "amphp/php-cs-fixer-config": "^2",
+                "amphp/phpunit-util": "^3",
+                "ext-pgsql": "*",
+                "ext-pq": "*",
+                "phpunit/phpunit": "^9",
+                "psalm/phar": "6.15.1"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php",
+                    "src/Internal/functions.php"
+                ],
+                "psr-4": {
+                    "Amp\\Postgres\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Aaron Piotrowski",
+                    "email": "aaron@trowski.com"
+                }
+            ],
+            "description": "Asynchronous PostgreSQL client for Amp.",
+            "homepage": "https://amphp.org",
+            "keywords": [
+                "async",
+                "asynchronous",
+                "database",
+                "db",
+                "pgsql",
+                "postgre",
+                "postgresql"
+            ],
+            "support": {
+                "issues": "https://github.com/amphp/postgres/issues",
+                "source": "https://github.com/amphp/postgres/tree/v2.2.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/amphp",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-02-25T04:47:18+00:00"
+        },
+        {
             "name": "amphp/process",
             "version": "v2.1.0",
             "source": {
@@ -973,6 +1116,87 @@
                 }
             ],
             "time": "2026-05-31T15:11:55+00:00"
+        },
+        {
+            "name": "amphp/redis",
+            "version": "v2.0.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/amphp/redis.git",
+                "reference": "964bcf6c2574645058371925a3668240a622bdab"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/amphp/redis/zipball/964bcf6c2574645058371925a3668240a622bdab",
+                "reference": "964bcf6c2574645058371925a3668240a622bdab",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3",
+                "amphp/byte-stream": "^2",
+                "amphp/cache": "^2",
+                "amphp/parser": "^1",
+                "amphp/pipeline": "^1",
+                "amphp/serialization": "^1",
+                "amphp/socket": "^2",
+                "amphp/sync": "^2",
+                "league/uri": "^7",
+                "php": ">=8.1",
+                "psr/log": "^1|^2|^3",
+                "revolt/event-loop": "^1"
+            },
+            "require-dev": {
+                "amphp/php-cs-fixer-config": "^2",
+                "amphp/phpunit-util": "^3",
+                "amphp/process": "^2",
+                "phpunit/phpunit": "^9",
+                "psalm/phar": "5.22"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php",
+                    "src/Internal/functions.php"
+                ],
+                "psr-4": {
+                    "Amp\\Redis\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Niklas Keller",
+                    "email": "me@kelunik.com"
+                },
+                {
+                    "name": "Aaron Piotrowski",
+                    "email": "aaron@trowski.com"
+                }
+            ],
+            "description": "Efficient asynchronous communication with Redis servers, enabling scalable and responsive data storage and retrieval.",
+            "homepage": "https://amphp.org/redis",
+            "keywords": [
+                "amp",
+                "amphp",
+                "async",
+                "client",
+                "redis",
+                "revolt"
+            ],
+            "support": {
+                "issues": "https://github.com/amphp/redis/issues",
+                "source": "https://github.com/amphp/redis/tree/v2.0.4"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/amphp",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-03-03T20:52:26+00:00"
         },
         {
             "name": "amphp/serialization",
@@ -1124,6 +1348,116 @@
                 }
             ],
             "time": "2026-08-22T18:13:20+00:00"
+        },
+        {
+            "name": "amphp/sql",
+            "version": "v2.1.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/amphp/sql.git",
+                "reference": "258bafe5ecf8a0491d86681f2a2af1dee2933a69"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/amphp/sql/zipball/258bafe5ecf8a0491d86681f2a2af1dee2933a69",
+                "reference": "258bafe5ecf8a0491d86681f2a2af1dee2933a69",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3",
+                "php": ">=8.1"
+            },
+            "require-dev": {
+                "amphp/php-cs-fixer-config": "^2",
+                "phpunit/phpunit": "^9",
+                "psalm/phar": "6.15.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Amp\\Sql\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Asynchronous SQL client for Amp.",
+            "homepage": "https://amphp.org",
+            "keywords": [
+                "async",
+                "asynchronous",
+                "database",
+                "db",
+                "sql"
+            ],
+            "support": {
+                "issues": "https://github.com/amphp/sql/issues",
+                "source": "https://github.com/amphp/sql/tree/v2.1.1"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/amphp",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-02-25T04:44:15+00:00"
+        },
+        {
+            "name": "amphp/sql-common",
+            "version": "v2.0.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/amphp/sql-common.git",
+                "reference": "735da17ef0a66e7139c9f7584af5c3f9827f83c0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/amphp/sql-common/zipball/735da17ef0a66e7139c9f7584af5c3f9827f83c0",
+                "reference": "735da17ef0a66e7139c9f7584af5c3f9827f83c0",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3",
+                "amphp/sql": "^2",
+                "php": ">=8.1"
+            },
+            "require-dev": {
+                "amphp/php-cs-fixer-config": "^2",
+                "amphp/phpunit-util": "^3",
+                "phpunit/phpunit": "^9",
+                "psalm/phar": "5.23"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Amp\\Sql\\Common\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Common classes for non-blocking SQL implementations.",
+            "homepage": "https://amphp.org",
+            "keywords": [
+                "async",
+                "asynchronous",
+                "database",
+                "db",
+                "sql"
+            ],
+            "support": {
+                "issues": "https://github.com/amphp/sql-common/issues",
+                "source": "https://github.com/amphp/sql-common/tree/v2.0.4"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/amphp",
+                    "type": "github"
+                }
+            ],
+            "time": "2025-12-11T20:05:29+00:00"
         },
         {
             "name": "amphp/sync",
@@ -1462,6 +1796,79 @@
                 }
             ],
             "time": "2025-08-10T19:31:58+00:00"
+        },
+        {
+            "name": "fabpot/amphp-sqlite3",
+            "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/fabpot/amp-sqlite3.git",
+                "reference": "3e31dd28dc8f4c14e4739f81f0ca5f6d3c3f148d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/fabpot/amp-sqlite3/zipball/3e31dd28dc8f4c14e4739f81f0ca5f6d3c3f148d",
+                "reference": "3e31dd28dc8f4c14e4739f81f0ca5f6d3c3f148d",
+                "shasum": ""
+            },
+            "require": {
+                "amphp/amp": "^3.1.1",
+                "amphp/byte-stream": "^2",
+                "amphp/parallel": "^2",
+                "amphp/sql": "^2.0.1",
+                "amphp/sql-common": "^2.0.4",
+                "amphp/sync": "^2",
+                "ext-sqlite3": "*",
+                "php": ">=8.4",
+                "revolt/event-loop": "^1.0.8"
+            },
+            "conflict": {
+                "amphp/dns": "<2.1.2",
+                "amphp/process": "<2.0.3",
+                "amphp/socket": "<2.3.1"
+            },
+            "require-dev": {
+                "amphp/php-cs-fixer-config": "^2",
+                "phpstan/phpstan": "^2.1",
+                "phpunit/phpunit": "^13.2"
+            },
+            "default-branch": true,
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Fabpot\\Amp\\Sqlite\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fabien Potencier",
+                    "email": "fabien@potencier.org"
+                }
+            ],
+            "description": "Asynchronous SQLite client for PHP based on Amp.",
+            "homepage": "https://github.com/fabpot/amp-sqlite3",
+            "keywords": [
+                "async",
+                "asynchronous",
+                "database",
+                "db",
+                "sqlite"
+            ],
+            "support": {
+                "issues": "https://github.com/fabpot/amp-sqlite3/issues",
+                "source": "https://github.com/fabpot/amp-sqlite3/tree/main"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/fabpot",
+                    "type": "github"
+                }
+            ],
+            "time": "2026-09-29T13:19:20+00:00"
         },
         {
             "name": "graham-campbell/result-type",
