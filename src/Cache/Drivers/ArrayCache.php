@@ -7,10 +7,6 @@ use Reactor\Contracts\CacheInterface;
 
 /**
  * In-process array cache.
- *
- * Suitable for tests and short-lived requests. Data is not shared
- * across processes, so it must not be used as a production cache for
- * multi-process deployments.
  */
 class ArrayCache implements CacheInterface
 {
@@ -19,17 +15,20 @@ class ArrayCache implements CacheInterface
 
     public function get(string $key, mixed $default = null): Future
     {
-        return Future::complete($this->doGet($key, $default));
+        $this->clean($key);
+        return Future::complete($this->storage[$key] ?? $default);
     }
 
     public function set(string $key, mixed $value, ?int $ttl = null): Future
     {
         $this->storage[$key] = $value;
+
         if ($ttl !== null && $ttl > 0) {
             $this->expirations[$key] = time() + $ttl;
         } else {
             unset($this->expirations[$key]);
         }
+
         return Future::complete(true);
     }
 
@@ -55,15 +54,18 @@ class ArrayCache implements CacheInterface
     public function remember(string $key, int $ttl, callable $callback): Future
     {
         if ($this->doHas($key)) {
-            return Future::complete($this->doGet($key));
+            return Future::complete($this->storage[$key]);
         }
+
         $value = $callback();
+
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key, $ttl) {
                 $this->set($key, $resolved, $ttl);
                 return $resolved;
             });
         }
+
         $this->set($key, $value, $ttl);
         return Future::complete($value);
     }
@@ -71,15 +73,18 @@ class ArrayCache implements CacheInterface
     public function rememberForever(string $key, callable $callback): Future
     {
         if ($this->doHas($key)) {
-            return Future::complete($this->doGet($key));
+            return Future::complete($this->storage[$key]);
         }
+
         $value = $callback();
+
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key) {
                 $this->set($key, $resolved);
                 return $resolved;
             });
         }
+
         $this->set($key, $value);
         return Future::complete($value);
     }
@@ -99,6 +104,7 @@ class ArrayCache implements CacheInterface
         }
 
         $this->storage[$key] = $new;
+
         if ($remainingTtl !== null) {
             $this->expirations[$key] = time() + $remainingTtl;
         } else {
@@ -111,12 +117,6 @@ class ArrayCache implements CacheInterface
     public function decrement(string $key, int $amount = 1): Future
     {
         return $this->increment($key, -$amount);
-    }
-
-    private function doGet(string $key, mixed $default = null): mixed
-    {
-        $this->clean($key);
-        return $this->storage[$key] ?? $default;
     }
 
     private function doHas(string $key): bool

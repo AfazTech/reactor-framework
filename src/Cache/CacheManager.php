@@ -32,7 +32,7 @@ class CacheManager implements CacheInterface
             'file'     => new FileCache(
                 $config['path'] ?? storage_path('cache'),
                 $config['prefix'] ?? 'reactor_',
-                $config['allowed_classes'] ?? true
+                $config['allowed_classes'] ?? false
             ),
             'redis'    => new RedisCache($config),
             'mysql'    => new MysqlCache($config),

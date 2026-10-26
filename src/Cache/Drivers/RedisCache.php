@@ -4,19 +4,11 @@ namespace Reactor\Cache\Drivers;
 
 use Amp\Future;
 use Amp\Redis\RedisClient;
-use Amp\Redis\RedisConfig;
 use Reactor\Contracts\CacheInterface;
+use function Amp\Redis\createRedisClient;
 
 /**
  * Non-blocking Redis cache backed by amphp/redis.
- *
- * Connection settings are read from the configuration array:
- *   - host (default: 127.0.0.1)
- *   - port (default: 6379)
- *   - password (optional)
- *   - database (default: 0)
- *   - prefix (default: reactor:)
- *   - allowed_classes (default: true)
  */
 class RedisCache implements CacheInterface
 {
@@ -26,135 +18,123 @@ class RedisCache implements CacheInterface
 
     public function __construct(array $config)
     {
-        $host = $config['host'] ?? '127.0.0.1';
-        $port = $config['port'] ?? 6379;
+        $host = (string) ($config['host'] ?? '127.0.0.1');
+        $port = (int) ($config['port'] ?? 6379);
         $password = $config['password'] ?? null;
-        $database = $config['database'] ?? 0;
-        $this->prefix = $config['prefix'] ?? 'reactor:';
-        $this->allowedClasses = $config['allowed_classes'] ?? true;
+        $database = (int) ($config['database'] ?? 0);
+        $this->prefix = (string) ($config['prefix'] ?? 'reactor:');
+        $this->allowedClasses = $config['allowed_classes'] ?? false;
 
         $uri = sprintf('redis://%s:%d', $host, $port);
 
-        $redisConfig = RedisConfig::fromUri($uri);
-
-        if ($password !== null && $password !== '') {
-            $redisConfig = $redisConfig->withPassword($password);
+        if (is_string($password) && $password !== '') {
+            $uri = sprintf('redis://:%s@%s:%d', rawurlencode($password), $host, $port);
         }
 
         if ($database > 0) {
-            $redisConfig = $redisConfig->withDatabase($database);
+            $uri .= '/' . $database;
         }
 
-        $this->redis = new RedisClient($redisConfig);
+        $this->redis = createRedisClient($uri);
     }
 
     public function get(string $key, mixed $default = null): Future
     {
-        return Future::complete($this->doGet($key, $default));
+        $raw = $this->redis->get($this->prefix . $key);
+
+        if ($raw === null) {
+            return Future::complete($default);
+        }
+
+        return Future::complete(
+            unserialize($raw, ['allowed_classes' => $this->allowedClasses])
+        );
     }
 
     public function set(string $key, mixed $value, ?int $ttl = null): Future
     {
-        return Future::complete($this->doSet($key, $value, $ttl));
+        $redisKey = $this->prefix . $key;
+        $this->redis->set($redisKey, serialize($value));
+
+        if ($ttl !== null && $ttl > 0) {
+            $this->redis->expireIn($redisKey, $ttl);
+        }
+
+        return Future::complete(true);
     }
 
     public function delete(string $key): Future
     {
-        return Future::complete($this->doDelete($key));
+        $this->redis->delete($this->prefix . $key);
+        return Future::complete(true);
     }
 
     public function has(string $key): Future
     {
-        return Future::complete($this->doHas($key));
+        return Future::complete($this->redis->has($this->prefix . $key));
     }
 
     public function clear(): Future
     {
-        return Future::complete($this->redis->flushDatabase());
+        // Only remove keys that belong to this cache instance. Using
+        // flushDatabase() would also wipe unrelated keys that share the
+        // same Redis database.
+        foreach ($this->redis->scan($this->prefix . '*') as $key) {
+            $this->redis->delete($key);
+        }
+
+        return Future::complete(true);
     }
 
     public function remember(string $key, int $ttl, callable $callback): Future
     {
-        if ($this->doHas($key)) {
-            return Future::complete($this->doGet($key));
+        if ($this->redis->has($this->prefix . $key)) {
+            return $this->get($key);
         }
 
         $value = $callback();
 
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key, $ttl) {
-                $this->doSet($key, $resolved, $ttl);
+                $this->set($key, $resolved, $ttl);
                 return $resolved;
             });
         }
 
-        $this->doSet($key, $value, $ttl);
+        $this->set($key, $value, $ttl);
         return Future::complete($value);
     }
 
     public function rememberForever(string $key, callable $callback): Future
     {
-        if ($this->doHas($key)) {
-            return Future::complete($this->doGet($key));
+        if ($this->redis->has($this->prefix . $key)) {
+            return $this->get($key);
         }
 
         $value = $callback();
 
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key) {
-                $this->doSet($key, $resolved);
+                $this->set($key, $resolved);
                 return $resolved;
             });
         }
 
-        $this->doSet($key, $value);
+        $this->set($key, $value);
         return Future::complete($value);
     }
 
     public function increment(string $key, int $amount = 1): Future
     {
         return Future::complete(
-            $this->redis->incrementBy($this->prefix . $key, $amount)
+            $this->redis->increment($this->prefix . $key, $amount)
         );
     }
 
     public function decrement(string $key, int $amount = 1): Future
     {
-        return $this->increment($key, -$amount);
-    }
-
-    private function doGet(string $key, mixed $default = null): mixed
-    {
-        $raw = $this->redis->get($this->prefix . $key);
-
-        if ($raw === null) {
-            return $default;
-        }
-
-        return unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
-    }
-
-    private function doSet(string $key, mixed $value, ?int $ttl = null): bool
-    {
-        $serialized = serialize($value);
-
-        if ($ttl !== null && $ttl > 0) {
-            $this->redis->setWithTtl($this->prefix . $key, $serialized, $ttl);
-        } else {
-            $this->redis->set($this->prefix . $key, $serialized);
-        }
-
-        return true;
-    }
-
-    private function doDelete(string $key): bool
-    {
-        $this->redis->delete($this->prefix . $key);
-        return true;
-    }
-
-    private function doHas(string $key): bool
-    {
-        return $this->redis->exists($this->prefix . $key);
+        return Future::complete(
+            $this->redis->decrement($this->prefix . $key, $amount)
+        );
     }
 }

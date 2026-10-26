@@ -35,6 +35,7 @@
         "amphp/mysql": "^3.0",
         "amphp/postgres": "^2.0",
         "amphp/file": "^4.0",
+        "amphp/sync": "^2.0",
         "fabpot/amp-sqlite3": "dev-main",
         "illuminate/database": "^9.0",
         "illuminate/events": "^9.0",
