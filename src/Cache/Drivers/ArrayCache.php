@@ -32,7 +32,10 @@ class ArrayCache implements CacheInterface
     public function has(string $key): bool
     {
         $this->clean($key);
-        return isset($this->storage[$key]);
+
+        // array_key_exists() is used instead of isset() so that a cached
+        // null value is still reported as present.
+        return array_key_exists($key, $this->storage);
     }
 
     public function clear(): bool
@@ -44,9 +47,10 @@ class ArrayCache implements CacheInterface
 
     public function remember(string $key, int $ttl, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        // has() is used instead of get() !== null so that a cached null
+        // value is not mistaken for a cache miss.
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value, $ttl);
@@ -55,9 +59,8 @@ class ArrayCache implements CacheInterface
 
     public function rememberForever(string $key, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value);
@@ -66,9 +69,22 @@ class ArrayCache implements CacheInterface
 
     public function increment(string $key, int $amount = 1): int|false
     {
-        $current = (int) $this->get($key, 0);
+        $this->clean($key);
+
+        $current = (int) ($this->storage[$key] ?? 0);
         $new = $current + $amount;
-        $this->set($key, $new);
+
+        // Preserve any existing TTL so that incrementing a TTL-bound
+        // counter does not silently turn it into a permanent one.
+        $remainingTtl = null;
+        if (isset($this->expirations[$key])) {
+            $remaining = $this->expirations[$key] - time();
+            if ($remaining > 0) {
+                $remainingTtl = $remaining;
+            }
+        }
+
+        $this->set($key, $new, $remainingTtl);
         return $new;
     }
 

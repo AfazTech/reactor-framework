@@ -71,9 +71,10 @@ class RedisCache implements CacheInterface
 
     public function remember(string $key, int $ttl, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        // has() is used instead of get() !== null so that a cached null
+        // value is not mistaken for a cache miss.
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value, $ttl);
@@ -82,9 +83,8 @@ class RedisCache implements CacheInterface
 
     public function rememberForever(string $key, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value);

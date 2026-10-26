@@ -67,7 +67,31 @@ class FileCache implements CacheInterface
 
     public function has(string $key): bool
     {
-        return file_exists($this->fileName($key));
+        // Unlike the previous implementation, this method now respects
+        // the stored TTL. An expired file is removed and reported as
+        // absent so that callers relying on has() see a consistent
+        // view with get().
+        $file = $this->fileName($key);
+        if (!file_exists($file)) {
+            return false;
+        }
+
+        $data = @file_get_contents($file);
+        if ($data === false) {
+            return false;
+        }
+
+        $decoded = @unserialize($data, ['allowed_classes' => $this->allowedClasses]);
+        if (!is_array($decoded)) {
+            return false;
+        }
+
+        if (isset($decoded['ttl']) && $decoded['ttl'] !== null && time() > $decoded['ttl']) {
+            @unlink($file);
+            return false;
+        }
+
+        return true;
     }
 
     public function clear(): bool
@@ -81,9 +105,10 @@ class FileCache implements CacheInterface
 
     public function remember(string $key, int $ttl, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        // has() is used instead of get() !== null so that a cached null
+        // value is not mistaken for a cache miss.
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value, $ttl);
@@ -92,9 +117,8 @@ class FileCache implements CacheInterface
 
     public function rememberForever(string $key, callable $callback): mixed
     {
-        $value = $this->get($key);
-        if ($value !== null) {
-            return $value;
+        if ($this->has($key)) {
+            return $this->get($key);
         }
         $value = $callback();
         $this->set($key, $value);
@@ -103,10 +127,59 @@ class FileCache implements CacheInterface
 
     public function increment(string $key, int $amount = 1): int|false
     {
-        $current = (int) $this->get($key, 0);
-        $new = $current + $amount;
-        $this->set($key, $new);
-        return $new;
+        // The read-modify-write cycle runs under an exclusive file lock
+        // so that concurrent increments cannot lose updates. The TTL of
+        // an existing entry is preserved; an expired entry restarts
+        // from zero without a TTL.
+        $file = $this->fileName($key);
+
+        $handle = @fopen($file, 'c+');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                return false;
+            }
+
+            $contents = stream_get_contents($handle);
+            $decoded = ($contents !== false && $contents !== '')
+                ? @unserialize($contents, ['allowed_classes' => $this->allowedClasses])
+                : null;
+
+            $current = 0;
+            $remainingTtl = null;
+
+            if (is_array($decoded)) {
+                $storedTtl = $decoded['ttl'] ?? null;
+                $notExpired = $storedTtl === null || time() <= $storedTtl;
+
+                if ($notExpired) {
+                    $current = (int) ($decoded['value'] ?? 0);
+                    if ($storedTtl !== null) {
+                        $remainingTtl = $storedTtl - time();
+                    }
+                }
+            }
+
+            $new = $current + $amount;
+
+            $data = [
+                'value' => $new,
+                'ttl' => $remainingTtl !== null ? time() + $remainingTtl : null,
+            ];
+
+            ftruncate($handle, 0);
+            rewind($handle);
+            fwrite($handle, serialize($data));
+            fflush($handle);
+
+            return $new;
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     public function decrement(string $key, int $amount = 1): int|false
