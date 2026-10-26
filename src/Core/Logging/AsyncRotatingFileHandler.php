@@ -3,7 +3,6 @@
 namespace Reactor\Core\Logging;
 
 use Amp\File;
-use Amp\File\File;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -23,7 +22,7 @@ use function Amp\async;
  */
 final class AsyncRotatingFileHandler extends AbstractProcessingHandler
 {
-    private ?File $file = null;
+    private ?\Amp\File\File $file = null;
     private string $currentDate;
 
     public function __construct(

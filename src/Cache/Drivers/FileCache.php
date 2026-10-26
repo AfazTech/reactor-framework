@@ -3,7 +3,6 @@
 namespace Reactor\Cache\Drivers;
 
 use Amp\File;
-use Amp\File\File;
 use Amp\File\LockType;
 use Amp\Future;
 use Reactor\Contracts\CacheInterface;
@@ -219,8 +218,9 @@ class FileCache implements CacheInterface
             $current = 0;
             $remainingTtl = null;
 
-            if ($handle->getSize() > 0) {
-                $raw = $handle->read(length: $handle->getSize());
+            $size = $handle->getSize();
+            if ($size > 0) {
+                $raw = $handle->read(length: $size);
                 $decoded = @unserialize((string) $raw, ['allowed_classes' => $this->allowedClasses]);
 
                 if (is_array($decoded)) {
