@@ -1,6 +1,8 @@
 <?php
+
 namespace Reactor\Console\Commands;
 
+use Amp\Future;
 use Reactor\Queue\FailedJobRepository;
 use Reactor\Queue\QueueManager;
 use Symfony\Component\Console\Attribute\AsCommand;
@@ -8,6 +10,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use function Amp\async;
 
 #[AsCommand(name: 'queue:retry', description: 'Retry a failed queue job, or all of them')]
 class QueueRetryCommand extends Command
@@ -52,7 +55,7 @@ class QueueRetryCommand extends Command
             return Command::FAILURE;
         }
 
-        if (!$this->requeue($job, $output)) {
+        if (!$this->requeue($job, $output)->await()) {
             return Command::FAILURE;
         }
 
@@ -67,7 +70,7 @@ class QueueRetryCommand extends Command
         $requeued = 0;
 
         foreach ($jobs as $job) {
-            if ($this->requeue($job, $output)) {
+            if ($this->requeue($job, $output)->await()) {
                 $requeued++;
             }
         }
@@ -79,26 +82,38 @@ class QueueRetryCommand extends Command
         return Command::SUCCESS;
     }
 
-    private function requeue(object $job, OutputInterface $output): bool
+    /**
+     * Push a failed job back onto its queue.
+     *
+     * Returns a Future<bool> so callers can decide whether to await it
+     * synchronously (as retryOne()/retryAll() do) or schedule the work
+     * concurrently and await later. The Future resolves to true on
+     * success and false when the payload is invalid or the push fails.
+     *
+     * @return Future<bool>
+     */
+    private function requeue(object $job, OutputInterface $output): Future
     {
-        $payload = json_decode((string) $job->payload, true);
-        if (!is_array($payload) || !isset($payload['job'])) {
+        return async(function () use ($job, $output): bool {
+            $payload = json_decode((string) $job->payload, true);
+            if (!is_array($payload) || !isset($payload['job'])) {
+                $output->writeln(
+                    "<error>Failed job {$job->id} has an invalid payload; skipping.</error>"
+                );
+                return false;
+            }
+
+            $this->manager->push(
+                (string) $payload['job'],
+                (array) ($payload['data'] ?? []),
+                (string) $job->queue,
+            )->await();
+
             $output->writeln(
-                "<error>Failed job {$job->id} has an invalid payload; skipping.</error>"
+                "<info>Failed job {$job->id} pushed back onto queue \"{$job->queue}\".</info>"
             );
-            return false;
-        }
 
-        $this->manager->push(
-            (string) $payload['job'],
-            (array) ($payload['data'] ?? []),
-            (string) $job->queue,
-        );
-
-        $output->writeln(
-            "<info>Failed job {$job->id} pushed back onto queue \"{$job->queue}\".</info>"
-        );
-
-        return true;
+            return true;
+        });
     }
 }

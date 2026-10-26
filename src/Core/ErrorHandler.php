@@ -51,9 +51,6 @@ class ErrorHandler
         $this->userProvider = $userProvider;
     }
 
-    /**
-     * Handle a generic exception.
-     */
     public function handleException(\Throwable $e, array $context = []): void
     {
         $message = $e->getMessage();
@@ -67,18 +64,12 @@ class ErrorHandler
         }
     }
 
-    /**
-     * Handle a middleware error.
-     */
     public function handleMiddlewareError(\Throwable $e, array $update, string $middlewareClass): void
     {
         $this->dispatcher->dispatch(Events::MIDDLEWARE_FAILED, $e, $middlewareClass, $update);
         $this->handleException($e, ['middleware' => $middlewareClass, 'update' => $update]);
     }
 
-    /**
-     * Send a user-friendly error message in the recipient's language.
-     */
     private function sendUserError(UserFriendlyException $e, array $context = []): void
     {
         $update = $context['update'] ?? [];

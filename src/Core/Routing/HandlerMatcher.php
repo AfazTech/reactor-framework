@@ -235,12 +235,6 @@ class HandlerMatcher
         return in_array('any', $allowed, true) || in_array($type, $allowed, true);
     }
 
-    /**
-     * Check whether the update satisfies the handler's reply requirement.
-     *
-     * A missing or null $requiresReply means "no constraint". When it is
-     * true, the update must be a reply; when false, it must not be.
-     */
     private function matchesReplyRequirement(array $metadata, array $update): bool
     {
         $requiresReply = $metadata['requiresReply'] ?? null;

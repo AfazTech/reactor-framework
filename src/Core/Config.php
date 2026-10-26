@@ -2,6 +2,8 @@
 
 namespace Reactor\Core;
 
+use Amp\File;
+
 /**
  * Multi-source configuration manager.
  *
@@ -21,67 +23,31 @@ namespace Reactor\Core;
  *
  * Values are addressed using dot notation (e.g. 'bot.token').
  *
- * When no application config path is provided the instance starts with
- * an empty configuration; callers can populate it via addSource() and
- * override(). This keeps the class usable as a standalone package with
- * no assumption about the host application's directory layout.
+ * Directory listing and file reading go through amphp/file so that a
+ * persistent-worker deployment can overlap configuration loading with
+ * other I/O. Config files are evaluated with eval() instead of require
+ * because require would re-enter the PHP autoloader synchronously and
+ * block the event loop when called inside a fiber.
  */
 class Config
 {
-    /**
-     * Priority recommended for package config directories.
-     *
-     * Packages should register their config with this priority so that
-     * the application's own config overrides it on conflicts.
-     */
     public const PRIORITY_PACKAGE = 10;
-
-    /**
-     * Priority used for the application's own config directory.
-     */
     public const PRIORITY_APPLICATION = 100;
 
-    /**
-     * Base configuration loaded from all registered sources.
-     *
-     * @var array<string, mixed>
-     */
+    /** @var array<string, mixed> */
     private array $baseConfig = [];
 
-    /**
-     * Runtime overrides applied on top of the base configuration.
-     *
-     * @var array<string, mixed>
-     */
+    /** @var array<string, mixed> */
     private array $runtime = [];
 
-    /**
-     * Effective configuration (base merged with runtime overrides).
-     *
-     * @var array<string, mixed>
-     */
+    /** @var array<string, mixed> */
     private array $config = [];
 
-    /**
-     * Registered config sources, each carrying a path and a priority.
-     *
-     * @var array<int, array{path: string, priority: int}>
-     */
+    /** @var array<int, array{path: string, priority: int}> */
     private array $sources = [];
 
-    /**
-     * Path of the application's own config directory, or an empty
-     * string when no application source is registered.
-     */
     private string $appConfigPath;
 
-    /**
-     * @param string|null $appConfigPath Optional application config
-     *                                   directory. When null the
-     *                                   instance starts empty so the
-     *                                   framework does not assume any
-     *                                   skeleton-specific path.
-     */
     public function __construct(?string $appConfigPath = null)
     {
         $this->appConfigPath = $appConfigPath !== null
@@ -98,16 +64,6 @@ class Config
         $this->loadConfigFiles();
     }
 
-    /**
-     * Register an additional config source directory.
-     *
-     * Packages should use self::PRIORITY_PACKAGE so that the application
-     * wins on conflicts. Use a priority greater than
-     * self::PRIORITY_APPLICATION to intentionally override application
-     * values (e.g. an environment-specific preset).
-     *
-     * Registration is idempotent for the same (path, priority) pair.
-     */
     public function addSource(string $path, int $priority = self::PRIORITY_PACKAGE): void
     {
         $path = rtrim($path, '/');
@@ -125,11 +81,6 @@ class Config
         $this->loadConfigFiles();
     }
 
-    /**
-     * Replace the application's own config directory.
-     *
-     * Other sources (packages, presets) are preserved.
-     */
     public function setConfigPath(string $path): void
     {
         $path = rtrim($path, '/');
@@ -137,7 +88,6 @@ class Config
             return;
         }
 
-        // Drop the previous application source, if any.
         if ($this->appConfigPath !== '') {
             $this->sources = array_values(array_filter(
                 $this->sources,
@@ -156,13 +106,6 @@ class Config
         $this->loadConfigFiles();
     }
 
-    /**
-     * Register a runtime override for a single key (dot notation).
-     *
-     * Runtime overrides take precedence over every config source and are
-     * applied last during the effective config rebuild. Calling this
-     * method with a nested key creates intermediate arrays as needed.
-     */
     public function override(string $key, mixed $value): void
     {
         $segments = explode('.', $key);
@@ -180,14 +123,6 @@ class Config
         $this->rebuild();
     }
 
-    /**
-     * Remove a runtime override previously registered via override().
-     *
-     * The value falls back to whatever the underlying config sources
-     * provide (or is removed entirely if no source defines it). Empty
-     * parent arrays left behind by the removal are pruned so that they
-     * cannot shadow the base config during the rebuild step.
-     */
     public function forgetOverride(string $key): void
     {
         $segments = explode('.', $key);
@@ -199,10 +134,6 @@ class Config
         $this->rebuild();
     }
 
-    /**
-     * Recursively unset a path inside the runtime override tree and
-     * prune any parent arrays that become empty as a result.
-     */
     private function unsetOverridePath(array &$array, array $segments): void
     {
         $segment = array_shift($segments);
@@ -226,9 +157,6 @@ class Config
         }
     }
 
-    /**
-     * Retrieve a configuration value using dot notation.
-     */
     public function get(string $key, mixed $default = null): mixed
     {
         $segments = explode('.', $key);
@@ -244,9 +172,6 @@ class Config
         return $value;
     }
 
-    /**
-     * Determine whether the given key exists in the effective config.
-     */
     public function has(string $key): bool
     {
         $segments = explode('.', $key);
@@ -262,13 +187,6 @@ class Config
         return true;
     }
 
-    /**
-     * Read a config value as a boolean.
-     *
-     * env() returns raw strings, so "false", "0", "no" and "off" must be
-     * interpreted as false instead of PHP's default truthiness where the
-     * non-empty string "false" would otherwise evaluate to true.
-     */
     private function getBool(string $key, bool $default = false): bool
     {
         $value = $this->get($key, $default);
@@ -292,13 +210,6 @@ class Config
         return (string) $this->get('bot.api_url', 'https://api.telegram.org/bot');
     }
 
-    /**
-     * Whether TLS certificates should be verified when talking to Telegram.
-     *
-     * Disabling this exposes the bot to man-in-the-middle attacks and must
-     * only be used for local development against a self-signed proxy. The
-     * default is true so that production deployments are secure-by-default.
-     */
     public function isVerifySsl(): bool
     {
         return $this->getBool('bot.verify_ssl', true);
@@ -309,13 +220,6 @@ class Config
         return $this->getBool('app.debug', false);
     }
 
-    /**
-     * Get the database configuration for the default connection.
-     *
-     * @return array<string, mixed>
-     *
-     * @throws \RuntimeException If the connection is not found.
-     */
     public function getDatabaseConfig(): array
     {
         $connection = $this->get('database.default', 'sqlite');
@@ -329,8 +233,6 @@ class Config
 
         $config = $connections[$connection];
 
-        // Resolve relative SQLite path against the host application's base
-        // path (REACTOR_BASE_PATH), not against the framework directory.
         if (($config['driver'] ?? null) === 'sqlite' && isset($config['database'])) {
             $dbPath = $config['database'];
             $isAbsolute = str_starts_with($dbPath, '/')
@@ -382,15 +284,6 @@ class Config
         $this->override('app.debug', $debug);
     }
 
-    /**
-     * Load every registered source into the base config, then rebuild
-     * the effective config (base + runtime overrides).
-     *
-     * Sources are merged in ascending priority order so that a source
-     * with a higher priority overrides lower-priority values. Within the
-     * same priority, insertion order is preserved because PHP's usort()
-     * is stable as of PHP 8.0.
-     */
     private function loadConfigFiles(): void
     {
         $this->baseConfig = [];
@@ -400,20 +293,21 @@ class Config
 
         foreach ($sorted as $source) {
             $directory = $source['path'];
-            if (!is_dir($directory)) {
+            if (!File\isDirectory($directory)) {
                 continue;
             }
 
-            $files = glob($directory . '/*.php');
-            if ($files === false) {
-                continue;
+            $phpFiles = [];
+            foreach (File\listFiles($directory) as $entry) {
+                if (str_ends_with($entry, '.php')) {
+                    $phpFiles[] = $directory . '/' . $entry;
+                }
             }
+            sort($phpFiles);
 
-            sort($files);
-
-            foreach ($files as $file) {
+            foreach ($phpFiles as $file) {
                 $group = pathinfo($file, PATHINFO_FILENAME);
-                $values = require $file;
+                $values = $this->evaluateConfigFile($file);
                 if (!is_array($values)) {
                     continue;
                 }
@@ -429,21 +323,42 @@ class Config
     }
 
     /**
-     * Recompute the effective config as base + runtime overrides.
+     * Evaluate a single config file without blocking the event loop.
+     *
+     * The file content is read via amphp/file (non-blocking) and then
+     * eval'd in-process so that `return [...]` continues to work
+     * exactly as a normal `require $path` would. PHP magic constants
+     * (__DIR__, __FILE__) that would otherwise resolve against this
+     * file are rewritten to point at the config file being loaded.
      */
+    private function evaluateConfigFile(string $path): mixed
+    {
+        $content = File\read($path);
+
+        $dir = var_export(dirname($path), true);
+        $file = var_export($path, true);
+        $content = str_replace(['__DIR__', '__FILE__'], [$dir, $file], $content);
+
+        if (str_starts_with($content, '<?php')) {
+            $content = substr($content, 5);
+        }
+
+        try {
+            return eval($content);
+        } catch (\ParseError $e) {
+            throw new \RuntimeException(
+                "Failed to evaluate config file {$path}: " . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+    }
+
     private function rebuild(): void
     {
         $this->config = $this->deepMerge($this->baseConfig, $this->runtime);
     }
 
-    /**
-     * Recursively merge two arrays.
-     *
-     * Associative arrays are merged key-by-key. List arrays (sequential
-     * numeric keys) and scalars are treated as atomic values, so the
-     * override completely replaces the base value. This mirrors the way
-     * Laravel's Config repository merges config files.
-     */
     private function deepMerge(array $base, array $override): array
     {
         foreach ($override as $key => $value) {

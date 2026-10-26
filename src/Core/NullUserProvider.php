@@ -18,17 +18,11 @@ use Reactor\Contracts\UserProviderInterface;
  */
 class NullUserProvider implements UserProviderInterface
 {
-    /**
-     * {@inheritdoc}
-     */
     public function getLanguage(int $userId): string
     {
         return 'en';
     }
 
-    /**
-     * {@inheritdoc}
-     */
     public function getStep(int $userId): ?string
     {
         return null;
