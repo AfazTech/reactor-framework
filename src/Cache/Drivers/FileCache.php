@@ -3,26 +3,27 @@
 namespace Reactor\Cache\Drivers;
 
 use Amp\File;
+use Amp\File\File;
+use Amp\File\LockType;
 use Amp\Future;
-use Amp\Sync\LocalKeyedMutex;
 use Reactor\Contracts\CacheInterface;
+use function Amp\async;
 
 /**
  * Non-blocking file-system cache backed by amphp/file.
  *
- * Values are serialized with PHP's serialize(). The allowed_classes
- * option defaults to false, which prevents PHP Object Injection when a
- * cache file is tampered with.
+ * Each key is stored in its own file under the configured directory.
+ * Values are serialized with PHP's serialize() so that arbitrary
+ * serializable values can be cached.
  *
- * increment() / decrement() are atomic within a single process only.
- * Cross-process atomicity is not provided by this driver.
+ * increment() and decrement() take an exclusive flock() on the file
+ * through amphp/file, which makes them safe across multiple processes.
  */
 class FileCache implements CacheInterface
 {
     private string $path;
     private string $prefix;
     private bool|array $allowedClasses;
-    private LocalKeyedMutex $mutex;
 
     public function __construct(
         string $path,
@@ -32,146 +33,195 @@ class FileCache implements CacheInterface
         $this->path = rtrim($path, '/');
         $this->prefix = $this->normalizePrefix($prefix);
         $this->allowedClasses = $allowedClasses;
-        $this->mutex = new LocalKeyedMutex();
     }
 
     public function get(string $key, mixed $default = null): Future
     {
-        $file = $this->fileName($key);
-
-        if (!File\exists($file)) {
-            return Future::complete($default);
-        }
-
-        $raw = File\read($file);
-        $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
-
-        if (!is_array($decoded)) {
-            return Future::complete($default);
-        }
-
-        $ttl = $decoded['ttl'] ?? null;
-        if ($ttl !== null && time() > $ttl) {
-            File\delete($file);
-            return Future::complete($default);
-        }
-
-        return Future::complete($decoded['value'] ?? $default);
+        return async(fn(): mixed => $this->doGet($key, $default));
     }
 
     public function set(string $key, mixed $value, ?int $ttl = null): Future
     {
-        $this->ensureDirectory();
-
-        File\write($this->fileName($key), serialize([
-            'value' => $value,
-            'ttl'   => $ttl !== null && $ttl > 0 ? time() + $ttl : null,
-        ]));
-
-        return Future::complete(true);
+        return async(fn(): bool => $this->doSet($key, $value, $ttl));
     }
 
     public function delete(string $key): Future
     {
-        $file = $this->fileName($key);
-
-        if (File\exists($file)) {
-            File\delete($file);
-        }
-
-        return Future::complete(true);
+        return async(fn(): bool => $this->doDelete($key));
     }
 
     public function has(string $key): Future
     {
-        $file = $this->fileName($key);
-
-        if (!File\exists($file)) {
-            return Future::complete(false);
-        }
-
-        $raw = File\read($file);
-        $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
-
-        if (!is_array($decoded)) {
-            return Future::complete(false);
-        }
-
-        $ttl = $decoded['ttl'] ?? null;
-        if ($ttl !== null && time() > $ttl) {
-            File\delete($file);
-            return Future::complete(false);
-        }
-
-        return Future::complete(true);
+        return async(fn(): bool => $this->doHas($key));
     }
 
     public function clear(): Future
     {
-        if (!File\isDirectory($this->path)) {
-            return Future::complete(true);
-        }
-
-        foreach (File\listFiles($this->path) as $file) {
-            $name = basename($file);
-            if (str_starts_with($name, $this->prefix)) {
-                File\delete($file);
-            }
-        }
-
-        return Future::complete(true);
+        return async(fn(): bool => $this->doClear());
     }
 
     public function remember(string $key, int $ttl, callable $callback): Future
     {
-        if ($this->has($key)->await()) {
-            return $this->get($key);
+        if ($this->doHas($key)) {
+            return Future::complete($this->doGet($key));
         }
 
         $value = $callback();
 
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key, $ttl) {
-                $this->set($key, $resolved, $ttl);
+                $this->doSet($key, $resolved, $ttl);
                 return $resolved;
             });
         }
 
-        $this->set($key, $value, $ttl);
+        $this->doSet($key, $value, $ttl);
         return Future::complete($value);
     }
 
     public function rememberForever(string $key, callable $callback): Future
     {
-        if ($this->has($key)->await()) {
-            return $this->get($key);
+        if ($this->doHas($key)) {
+            return Future::complete($this->doGet($key));
         }
 
         $value = $callback();
 
         if ($value instanceof Future) {
             return $value->map(function ($resolved) use ($key) {
-                $this->set($key, $resolved);
+                $this->doSet($key, $resolved);
                 return $resolved;
             });
         }
 
-        $this->set($key, $value);
+        $this->doSet($key, $value);
         return Future::complete($value);
     }
 
     public function increment(string $key, int $amount = 1): Future
     {
+        return async(fn(): int => $this->doIncrement($key, $amount));
+    }
+
+    public function decrement(string $key, int $amount = 1): Future
+    {
+        return $this->increment($key, -$amount);
+    }
+
+    private function fileName(string $key): string
+    {
+        return $this->path . '/' . $this->prefix . md5($key) . '.cache';
+    }
+
+    private function doGet(string $key, mixed $default = null): mixed
+    {
         $file = $this->fileName($key);
-        $mutex = $this->mutex->acquire($key);
+
+        if (!File\exists($file)) {
+            return $default;
+        }
+
+        $raw = File\read($file);
+        $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
+
+        if (!is_array($decoded)) {
+            return $default;
+        }
+
+        $ttl = $decoded['ttl'] ?? null;
+        if ($ttl !== null && time() > $ttl) {
+            File\deleteFile($file);
+            return $default;
+        }
+
+        return $decoded['value'] ?? $default;
+    }
+
+    private function doSet(string $key, mixed $value, ?int $ttl = null): bool
+    {
+        if (!File\isDirectory($this->path)) {
+            File\createDirectoryRecursively($this->path, 0755);
+        }
+
+        $data = [
+            'value' => $value,
+            'ttl'   => $ttl !== null && $ttl > 0 ? time() + $ttl : null,
+        ];
+
+        File\write($this->fileName($key), serialize($data));
+
+        return true;
+    }
+
+    private function doDelete(string $key): bool
+    {
+        $file = $this->fileName($key);
+
+        if (File\exists($file)) {
+            File\deleteFile($file);
+        }
+
+        return true;
+    }
+
+    private function doHas(string $key): bool
+    {
+        $file = $this->fileName($key);
+
+        if (!File\exists($file)) {
+            return false;
+        }
+
+        $raw = File\read($file);
+        $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
+
+        if (!is_array($decoded)) {
+            return false;
+        }
+
+        $ttl = $decoded['ttl'] ?? null;
+        if ($ttl !== null && time() > $ttl) {
+            File\deleteFile($file);
+            return false;
+        }
+
+        return true;
+    }
+
+    private function doClear(): bool
+    {
+        if (!File\isDirectory($this->path)) {
+            return true;
+        }
+
+        foreach (File\listFiles($this->path) as $filename) {
+            if (str_starts_with($filename, $this->prefix)) {
+                File\deleteFile($this->path . '/' . $filename);
+            }
+        }
+
+        return true;
+    }
+
+    private function doIncrement(string $key, int $amount): int
+    {
+        if (!File\isDirectory($this->path)) {
+            File\createDirectoryRecursively($this->path, 0755);
+        }
+
+        $file = $this->fileName($key);
+
+        $handle = File\openFile($file, 'c+');
 
         try {
+            $handle->lock(LockType::Exclusive);
+
             $current = 0;
             $remainingTtl = null;
 
-            if (File\exists($file)) {
-                $raw = File\read($file);
-                $decoded = @unserialize($raw, ['allowed_classes' => $this->allowedClasses]);
+            if ($handle->getSize() > 0) {
+                $raw = $handle->read(length: $handle->getSize());
+                $decoded = @unserialize((string) $raw, ['allowed_classes' => $this->allowedClasses]);
 
                 if (is_array($decoded)) {
                     $ttl = $decoded['ttl'] ?? null;
@@ -186,32 +236,19 @@ class FileCache implements CacheInterface
 
             $new = $current + $amount;
 
-            $this->ensureDirectory();
-            File\write($file, serialize([
+            $data = [
                 'value' => $new,
                 'ttl'   => $remainingTtl !== null ? time() + $remainingTtl : null,
-            ]));
+            ];
 
-            return Future::complete($new);
+            $handle->seek(0);
+            $handle->truncate(0);
+            $handle->write(serialize($data));
+
+            return $new;
         } finally {
-            $mutex->release();
-        }
-    }
-
-    public function decrement(string $key, int $amount = 1): Future
-    {
-        return $this->increment($key, -$amount);
-    }
-
-    private function fileName(string $key): string
-    {
-        return $this->path . '/' . $this->prefix . md5($key) . '.cache';
-    }
-
-    private function ensureDirectory(): void
-    {
-        if (!File\isDirectory($this->path)) {
-            File\createDirectoryRecursively($this->path, 0755);
+            $handle->unlock();
+            $handle->close();
         }
     }
 

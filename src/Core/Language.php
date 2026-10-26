@@ -2,10 +2,14 @@
 
 namespace Reactor\Core;
 
+use Amp\File;
 use Reactor\Contracts\LanguageInterface;
 
 /**
  * Language/translation manager that loads JSON language files.
+ *
+ * File access goes through amphp/file so that loading and saving
+ * translations never blocks the event loop.
  */
 class Language implements LanguageInterface
 {
@@ -28,15 +32,18 @@ class Language implements LanguageInterface
 
     private function loadAllLanguages(): void
     {
-        if (!is_dir($this->langDir)) {
-            mkdir($this->langDir, 0755, true);
+        if (!File\isDirectory($this->langDir)) {
+            File\createDirectoryRecursively($this->langDir, 0755);
             return;
         }
 
-        $files = glob($this->langDir . '/*.json');
-        foreach ($files as $file) {
-            $langCode = pathinfo($file, PATHINFO_FILENAME);
-            $content = file_get_contents($file);
+        foreach (File\listFiles($this->langDir) as $filename) {
+            if (!str_ends_with($filename, '.json')) {
+                continue;
+            }
+
+            $langCode = pathinfo($filename, PATHINFO_FILENAME);
+            $content = File\read($this->langDir . '/' . $filename);
             $this->translations[$langCode] = json_decode($content, true) ?? [];
             $this->loadedLanguages[] = $langCode;
         }
@@ -92,14 +99,16 @@ class Language implements LanguageInterface
             return false;
         }
 
-        if (!is_dir($this->langDir)) {
-            mkdir($this->langDir, 0755, true);
+        if (!File\isDirectory($this->langDir)) {
+            File\createDirectoryRecursively($this->langDir, 0755);
         }
 
         $file = $this->langDir . '/' . $lang . '.json';
         $json = json_encode($this->translations[$lang], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
-        return file_put_contents($file, $json) !== false;
+        File\write($file, $json);
+
+        return true;
     }
 
     public function getDefaultLanguage(): string

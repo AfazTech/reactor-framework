@@ -1,23 +1,20 @@
 <?php
+
 namespace Reactor\Core\Bootstrappers;
 
+use Amp\File;
 use Reactor\Core\Container;
 use Reactor\Core\BootstrapperInterface;
 use Reactor\Attributes\Middleware as MiddlewareAttr;
 use Reactor\Attributes\OnUpdate;
 use Reactor\Attributes\Reply;
-use Reactor\Enums\MiddlewareMode;
 use Reactor\Contracts\LoggerInterface;
 
 /**
  * Bootstrapper that discovers and registers middleware from source directories.
  *
- * Discovery is recursive: nested subdirectories contribute to the class
- * namespace in the same way PHP's PSR-4 autoloader would resolve them.
- *
- * Middleware classes are tracked in `$seenClasses` so that overlapping
- * sources (root + subdirectory, or a source listed twice) do not cause
- * the same middleware to be registered twice in the pipeline.
+ * Discovery uses amphp/file for directory listing so that it never
+ * blocks the event loop.
  */
 class MiddlewareBootstrapper implements BootstrapperInterface
 {
@@ -41,8 +38,8 @@ class MiddlewareBootstrapper implements BootstrapperInterface
             $directory = rtrim($source['directory'], '/');
             $namespace = $source['namespace'];
 
-            if (!is_dir($directory)) {
-                $logger->warning("Middleware directory not found", ['directory' => $directory]);
+            if (!File\isDirectory($directory)) {
+                $logger->warning('Middleware directory not found', ['directory' => $directory]);
                 continue;
             }
 
@@ -96,7 +93,7 @@ class MiddlewareBootstrapper implements BootstrapperInterface
                     'requiresReply'  => $requiresReply,
                 ];
                 $discoveredCount++;
-                $logger->debug("Discovered middleware", [
+                $logger->debug('Discovered middleware', [
                     'class'    => $className,
                     'priority' => $priority,
                     'mode'     => $mode->name,
@@ -110,7 +107,7 @@ class MiddlewareBootstrapper implements BootstrapperInterface
         });
 
         $container->singleton('middlewares', fn() => $middlewares);
-        $logger->info("Middleware discovery completed", ['count' => $discoveredCount]);
+        $logger->info('Middleware discovery completed', ['count' => $discoveredCount]);
     }
 
     /**
@@ -121,18 +118,29 @@ class MiddlewareBootstrapper implements BootstrapperInterface
     private function findPhpFiles(string $directory): array
     {
         $files = [];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS)
-        );
-
-        foreach ($iterator as $file) {
-            /** @var \SplFileInfo $file */
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $files[] = $file->getPathname();
-            }
-        }
-
+        $this->walk($directory, $files);
         sort($files);
         return $files;
+    }
+
+    private function walk(string $directory, array &$files): void
+    {
+        foreach (File\listFiles($directory) as $entry) {
+            $path = $directory . '/' . $entry;
+
+            $stat = File\getStatus($path);
+            if ($stat === null) {
+                continue;
+            }
+
+            if ($stat['mode'] & 0040000) {
+                $this->walk($path, $files);
+                continue;
+            }
+
+            if (str_ends_with($entry, '.php')) {
+                $files[] = $path;
+            }
+        }
     }
 }

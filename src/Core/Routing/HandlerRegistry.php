@@ -2,6 +2,7 @@
 
 namespace Reactor\Core\Routing;
 
+use Amp\File;
 use Reactor\Attributes\Text;
 use Reactor\Attributes\Callback;
 use Reactor\Attributes\Step;
@@ -16,17 +17,8 @@ use Reactor\Contracts\LoggerInterface;
 /**
  * Registry that stores all discovered handlers and their metadata.
  *
- * Discovery is recursive, so a single root source (e.g. `App\Handlers`)
- * is enough to cover nested subdirectories such as `Handlers\Admin`.
- * Classes are tracked in `$discoveredClasses` so that overlapping or
- * duplicated sources (root + subdirectory, identical entries in the
- * sources list, re-discovery after a reload) do not register the same
- * handler twice.
- *
- * Both #[Text] and #[Callback] are repeatable, so a single handler class
- * may be registered under several names, patterns, or callback data
- * values. #[Step] remains single-use because a class can only be a step
- * handler for one step name at a time.
+ * Discovery uses amphp/file for directory listing so that it never
+ * blocks the event loop.
  */
 class HandlerRegistry
 {
@@ -39,8 +31,6 @@ class HandlerRegistry
     private array $handlerMetadata = [];
 
     /**
-     * Fully-qualified class names already processed, used for de-duplication.
-     *
      * @var array<string, true>
      */
     private array $discoveredClasses = [];
@@ -54,15 +44,9 @@ class HandlerRegistry
         $this->logger = $logger;
     }
 
-    /**
-     * Discover handlers in a single directory (recursively).
-     *
-     * PHP files in nested subdirectories are discovered as well; the
-     * subdirectory name becomes part of the class namespace.
-     */
     public function discover(string $directory, string $namespace): void
     {
-        if (!is_dir($directory)) {
+        if (!File\isDirectory($directory)) {
             $this->logger->warning('Router discovery directory not found', ['directory' => $directory]);
             return;
         }
@@ -79,9 +63,6 @@ class HandlerRegistry
                 continue;
             }
 
-            // Skip classes already registered through a previous source.
-            // This protects against overlapping sources (parent + child)
-            // and against calling discover() twice on the same tree.
             if (isset($this->discoveredClasses[$className])) {
                 $this->logger->debug('Handler already discovered, skipping', ['class' => $className]);
                 continue;
@@ -91,7 +72,6 @@ class HandlerRegistry
             $reflection = new \ReflectionClass($className);
             $metadata = $this->extractMetadata($reflection, $className);
 
-            // Fallback handler.
             $fallbackAttr = $reflection->getAttributes(Fallback::class);
             if (!empty($fallbackAttr)) {
                 $fallback = $fallbackAttr[0]->newInstance();
@@ -107,7 +87,6 @@ class HandlerRegistry
                 $allowedTypes = $onUpdate->types;
             }
 
-            // Step handler.
             $stepAttr = $this->getAttribute($reflection, Step::class);
             if ($stepAttr) {
                 $this->steps[$stepAttr->name] = [
@@ -122,8 +101,6 @@ class HandlerRegistry
                 continue;
             }
 
-            // Callback handlers (repeatable — a single class may listen on
-            // multiple callback data values or patterns).
             $callbackAttrs = $reflection->getAttributes(Callback::class);
             if (!empty($callbackAttrs)) {
                 foreach ($callbackAttrs as $attr) {
@@ -156,7 +133,6 @@ class HandlerRegistry
                 continue;
             }
 
-            // Text/command handlers.
             $textAttrs = $reflection->getAttributes(Text::class);
             if (!empty($textAttrs)) {
                 foreach ($textAttrs as $attr) {
@@ -220,11 +196,6 @@ class HandlerRegistry
         }
     }
 
-    /**
-     * Discover handlers in multiple directories.
-     *
-     * @param array<int, array<string, string>> $sources
-     */
     public function discoverMany(array $sources): void
     {
         foreach ($sources as $source) {
@@ -237,29 +208,37 @@ class HandlerRegistry
     }
 
     /**
-     * Recursively find all PHP files under the given directory.
-     *
-     * The result is sorted so that discovery order is deterministic
-     * (which matters when two handlers share the same priority).
+     * Recursively find every PHP file under the given directory.
      *
      * @return array<int, string> Sorted list of absolute file paths.
      */
     private function findPhpFiles(string $directory): array
     {
         $files = [];
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS)
-        );
-
-        foreach ($iterator as $file) {
-            /** @var \SplFileInfo $file */
-            if ($file->isFile() && $file->getExtension() === 'php') {
-                $files[] = $file->getPathname();
-            }
-        }
-
+        $this->walk($directory, $files);
         sort($files);
         return $files;
+    }
+
+    private function walk(string $directory, array &$files): void
+    {
+        foreach (File\listFiles($directory) as $entry) {
+            $path = $directory . '/' . $entry;
+
+            $stat = File\getStatus($path);
+            if ($stat === null) {
+                continue;
+            }
+
+            if ($stat['mode'] & 0040000) {
+                $this->walk($path, $files);
+                continue;
+            }
+
+            if (str_ends_with($entry, '.php')) {
+                $files[] = $path;
+            }
+        }
     }
 
     private function extractMetadata(\ReflectionClass $reflection, string $className): array
@@ -299,13 +278,6 @@ class HandlerRegistry
         return empty($attributes) ? null : $attributes[0]->newInstance();
     }
 
-    /**
-     * Register a fallback candidate, keeping only the highest-priority one.
-     *
-     * Higher priority wins, matching the #[Fallback] attribute contract.
-     * Ties are resolved in favor of the first discovered class, which is
-     * deterministic because file listing is sorted.
-     */
     private function registerFallbackCandidate(string $className, int $priority, array $metadata): void
     {
         $candidate = [
