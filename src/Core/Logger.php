@@ -3,21 +3,18 @@
 namespace Reactor\Core;
 
 use Monolog\Logger as MonologLogger;
-use Monolog\Handler\RotatingFileHandler;
 use Monolog\Level;
 use Reactor\Contracts\LoggerInterface;
+use Reactor\Core\Logging\AsyncRotatingFileHandler;
 
 /**
- * PSR-3 compatible logger using Monolog with a rotating file handler.
+ * PSR-3 compatible logger using Monolog with a non-blocking rotating
+ * file handler backed by amphp/file.
  *
- * The constructor only wires the underlying Monolog instance. It performs
- * no logging itself so that merely instantiating the logger (for example
- * during container auto-resolution) has no visible side effects.
- *
- * When no explicit log file path is provided, the logger writes to a
- * per-installation file under the system temp directory. This keeps the
- * framework usable without the application skeleton and avoids writing
- * into the Composer vendor tree (which is read-only on most systems).
+ * The public API stays synchronous (void return types), matching the
+ * framework's LoggerInterface contract. Internally each write runs
+ * inside a fiber, so the Amp event loop is not blocked while the file
+ * system operation is pending.
  */
 class Logger implements LoggerInterface
 {
@@ -29,22 +26,22 @@ class Logger implements LoggerInterface
         $this->debugMode = $debugMode;
 
         if ($logFile === null) {
-            // Do not assume the application skeleton exists. Write to a
-            // predictable location under the system temp directory so a
-            // direct `new Logger()` never tries to create files inside
-            // the framework package or vendor directory.
             $logFile = rtrim(sys_get_temp_dir(), '/') . '/reactor-logs/app.log';
         }
 
-        $logDir = dirname($logFile);
-
-        if (!is_dir($logDir)) {
-            mkdir($logDir, 0755, true);
-        }
+        $directory = dirname($logFile);
+        $prefix = pathinfo($logFile, PATHINFO_FILENAME);
 
         $logger = new MonologLogger('telegram-bot');
         $level = $debugMode ? Level::Debug : Level::Info;
-        $handler = new RotatingFileHandler($logFile, 30, $level);
+
+        $handler = new AsyncRotatingFileHandler(
+            directory: $directory,
+            filenamePrefix: $prefix,
+            maxFiles: 30,
+            level: $level,
+        );
+
         $logger->pushHandler($handler);
 
         $this->logger = $logger;
