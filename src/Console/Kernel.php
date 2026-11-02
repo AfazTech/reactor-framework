@@ -54,6 +54,8 @@ class Kernel
 
     public function registerCommands(Application $app): void
     {
+        $app->add($this->container->get(\Reactor\Console\Commands\DoctorCommand::class));
+        $app->add($this->container->get(\Reactor\Console\Commands\MetricsCommand::class));
         // Migrations.
         $app->add($this->container->get(MigrateCommand::class));
         $app->add($this->container->get(MigrateRollbackCommand::class));

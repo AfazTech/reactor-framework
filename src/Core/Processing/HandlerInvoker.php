@@ -44,7 +44,7 @@ class HandlerInvoker
         $this->userProvider = $userProvider;
     }
 
-    public function invoke(HandlerExecution $execution): void
+    public function invoke(HandlerExecution $execution): bool
     {
         $handlerClass = $execution->handlerClass;
         $handler = $this->container->get($handlerClass);
@@ -68,6 +68,7 @@ class HandlerInvoker
 
             $this->logger->debug('Handler executed successfully', ['class' => $handlerClass]);
             $this->dispatcher->dispatch(Events::HANDLER_EXECUTED, $handlerClass, $execution->update);
+            return true;
         } catch (\Throwable $e) {
             $this->errorHandler->handleException($e, [
                 'handler' => $execution->handlerClass,
@@ -85,6 +86,7 @@ class HandlerInvoker
                 $message = $this->language->get('error', $lang);
                 $this->client->sendMessage($fromId, $message);
             }
+            return false;
         }
     }
 }

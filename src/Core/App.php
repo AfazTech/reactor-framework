@@ -253,7 +253,10 @@ class App
         });
 
         $this->logger->info('Bot polling started successfully');
-        $this->poller->start(false);
+        $monitor = $this->container->get(\Reactor\Diagnostics\LoopLagMonitor::class);
+        $monitor->start();
+        try { $this->poller->start(false); }
+        finally { $monitor->stop(); }
     }
 
     /**
