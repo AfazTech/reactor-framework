@@ -9,6 +9,7 @@ namespace Reactor;
  */
 class Events
 {
+    const CONVERSATION_COMPLETED = 'conversation.completed';
     /**
      * Dispatched when a new user is registered.
      *
