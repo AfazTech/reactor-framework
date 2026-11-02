@@ -10,6 +10,7 @@ namespace Reactor;
 class Events
 {
     const CONVERSATION_COMPLETED = 'conversation.completed';
+    const UPDATE_THROTTLED = 'update.throttled';
     /**
      * Dispatched when a new user is registered.
      *

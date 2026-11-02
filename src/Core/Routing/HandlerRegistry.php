@@ -263,6 +263,12 @@ class HandlerRegistry
             $metadata['requiresReply'] = $reply->only;
         }
 
+        $throttle = $reflection->getAttributes(\Reactor\Attributes\Throttle::class);
+        if ($throttle !== []) {
+            $rule = $throttle[0]->newInstance();
+            $metadata['throttle'] = ['limit' => $rule->limit, 'seconds' => $rule->seconds, 'key' => $rule->key];
+        }
+
         $this->handlerMetadata[$className] = $metadata;
         return $metadata;
     }
