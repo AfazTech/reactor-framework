@@ -63,8 +63,13 @@ final class AsyncSqliteManager implements AsyncDatabaseManagerInterface
 
     public function transaction(callable $callback): Future
     {
-        return async(function () use ($callback) {
-            $transaction = $this->connection->beginTransaction();
+        return $this->transactionOn($this->connection, $callback);
+    }
+
+    private function transactionOn(SqliteConnection|SqliteTransaction $link, callable $callback): Future
+    {
+        return async(function () use ($link, $callback) {
+            $transaction = $link->beginTransaction();
 
             try {
                 $result = $callback($this->wrap($transaction));
@@ -102,7 +107,7 @@ final class AsyncSqliteManager implements AsyncDatabaseManagerInterface
             execute: fn(string $sql, array $params): Future => async(
                 fn(): int => $transaction->execute($sql, $params)->getRowCount()
             ),
-            transaction: fn(callable $cb): Future => $this->transaction($cb),
+            transaction: fn(callable $cb): Future => $this->transactionOn($transaction, $cb),
         );
     }
 }

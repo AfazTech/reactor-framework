@@ -59,7 +59,8 @@ class UpdateProcessor
         LanguageInterface $language,
         UserProviderInterface $userProvider,
         UpdateTypeResolver $updateTypeResolver,
-        UnknownCommandHandler $unknownCommandHandler
+        UnknownCommandHandler $unknownCommandHandler,
+        private ?UpdateScope $updateScope = null,
     ) {
         $this->container = $container;
         $this->router = $router;
@@ -76,6 +77,12 @@ class UpdateProcessor
     }
 
     public function process(array $update): void
+    {
+        $this->updateScope ??= new UpdateScope();
+        $this->updateScope->run(fn () => $this->processWithinScope($update));
+    }
+
+    private function processWithinScope(array $update): void
     {
         $updateType = $this->updateTypeResolver->getType($update);
 

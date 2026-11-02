@@ -24,15 +24,22 @@ class QueueManager
     private Container $container;
     private QueueManagerInterface $driver;
     private AsyncDatabaseManagerInterface $asyncDb;
+    private string $quotedTable;
 
     public function __construct(
         Container $container,
         QueueManagerInterface $driver,
         AsyncDatabaseManagerInterface $asyncDb,
+        string $table = 'jobs',
     ) {
         $this->container = $container;
         $this->driver = $driver;
         $this->asyncDb = $asyncDb;
+        if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/D', $table)) {
+            throw new \InvalidArgumentException('Invalid queue table name: ' . $table);
+        }
+        $quote = in_array($asyncDb->getDriver(), ['mysql', 'mariadb'], true) ? '`' : '"';
+        $this->quotedTable = $quote . $table . $quote;
     }
 
     /**
@@ -49,7 +56,7 @@ class QueueManager
             $now = time();
 
             $this->asyncDb->execute(
-                'INSERT INTO jobs (queue, payload, attempts, reserved_at, available_at, created_at)
+                'INSERT INTO ' . $this->quotedTable . ' (queue, payload, attempts, reserved_at, available_at, created_at)
                  VALUES (:queue, :payload, 0, NULL, :available_at, :created_at)',
                 [
                     'queue'        => $queue,

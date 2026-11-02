@@ -35,4 +35,24 @@ class QueueDispatchTest extends TestCase
         $this->expectExceptionMessage('insert failed');
         $queue->push('ExampleJob')->await();
     }
+    public function testDispatchUsesTheConfiguredTableWithRealSqlite(): void
+    {
+        $db = new \Reactor\Database\Async\AsyncSqliteManager(['database' => ':memory:']);
+        $db->execute('CREATE TABLE pending_jobs (queue TEXT, payload TEXT, attempts INTEGER,
+            reserved_at INTEGER, available_at INTEGER, created_at INTEGER)')->await();
+        $queue = new QueueManager(new Container(), $this->createMock(QueueManagerInterface::class), $db, 'pending_jobs');
+        $queue->push('ExampleJob', ['value' => 42], 'emails')->await();
+        $job = $db->fetchOne('SELECT * FROM pending_jobs')->await();
+        self::assertSame('emails', $job['queue']);
+        self::assertSame(['job' => 'ExampleJob', 'data' => ['value' => 42]], json_decode($job['payload'], true));
+        self::assertSame(0, $job['attempts']);
+    }
+
+    public function testQueueTableRejectsSqlFragments(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        new QueueManager(new Container(), $this->createMock(QueueManagerInterface::class),
+            $this->createMock(AsyncDatabaseManagerInterface::class), 'jobs; DROP TABLE users');
+    }
+
 }

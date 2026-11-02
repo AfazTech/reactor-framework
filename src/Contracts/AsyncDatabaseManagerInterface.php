@@ -51,7 +51,8 @@ interface AsyncDatabaseManagerInterface
      *
      * The callback receives an AsyncDatabaseManagerInterface bound to
      * the active transaction, so nested calls participate in it. The
-     * returned future resolves to the callback's return value, or fails
+     * Calling transaction() on that bound manager uses a nested savepoint.
+     * The returned future resolves to the callback's return value, or fails
      * after rolling back when the callback throws.
      *
      * @return Future<mixed>

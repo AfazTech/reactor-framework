@@ -13,6 +13,7 @@ use Reactor\Core\Router;
 use Reactor\Core\MiddlewareManager;
 use Reactor\Core\ErrorHandler;
 use Reactor\Core\UpdateProcessor;
+use Reactor\Core\UpdateScope;
 use Reactor\Core\UpdateTypeResolver;
 use Reactor\Core\UnknownCommandHandler;
 use Reactor\Core\NullUserProvider;
@@ -186,14 +187,19 @@ class CoreServiceProvider implements ServiceProviderInterface
         });
 
         $container->singleton(QueueManagerInterface::class, function ($c) {
-            return new DatabaseQueue($c->get(DatabaseManagerInterface::class));
+            return new DatabaseQueue(
+                $c->get(DatabaseManagerInterface::class),
+                (string) $c->get(Config::class)->get('queue.table', 'jobs'),
+                (int) $c->get(Config::class)->get('queue.retry_after', 90)
+            );
         });
 
         $container->singleton(QueueManager::class, function ($c) {
             return new QueueManager(
                 $c->get(Container::class),
                 $c->get(QueueManagerInterface::class),
-                $c->get(AsyncDatabaseManagerInterface::class)
+                $c->get(AsyncDatabaseManagerInterface::class),
+                (string) $c->get(Config::class)->get('queue.table', 'jobs')
             );
         });
 
@@ -257,6 +263,8 @@ class CoreServiceProvider implements ServiceProviderInterface
             );
         });
 
+        $container->singleton(UpdateScope::class, fn () => new UpdateScope());
+
         $container->singleton(UpdateProcessor::class, function ($c) {
             return new UpdateProcessor(
                 $c->get(Container::class),
@@ -270,7 +278,8 @@ class CoreServiceProvider implements ServiceProviderInterface
                 $c->get(LanguageInterface::class),
                 $c->get(UserProviderInterface::class),
                 $c->get(UpdateTypeResolver::class),
-                $c->get(UnknownCommandHandler::class)
+                $c->get(UnknownCommandHandler::class),
+                $c->get(UpdateScope::class)
             );
         });
 

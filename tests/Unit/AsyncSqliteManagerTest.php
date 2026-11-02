@@ -40,4 +40,51 @@ class AsyncSqliteManagerTest extends TestCase
         }
         self::assertSame([], $db->fetchAll('SELECT * FROM items')->await());
     }
+    public function testNestedTransactionsUseSavepointsAndCanRollBackIndependently(): void
+    {
+        $db = new AsyncSqliteManager(['database' => ':memory:']);
+        $db->execute('CREATE TABLE items (id INTEGER)')->await();
+        $result = $db->transaction(function ($outer) {
+            $outer->execute('INSERT INTO items VALUES (1)')->await();
+            $value = $outer->transaction(function ($inner) {
+                $inner->execute('INSERT INTO items VALUES (2)')->await();
+                return $inner->transaction(function ($deep) {
+                    $deep->execute('INSERT INTO items VALUES (3)')->await();
+                    return 'nested result';
+                });
+            })->await();
+            self::assertSame('nested result', $value);
+            try {
+                $outer->transaction(function ($inner) {
+                    $inner->execute('INSERT INTO items VALUES (4)')->await();
+                    throw new \RuntimeException('inner rollback');
+                })->await();
+                self::fail('Expected inner rollback');
+            } catch (\RuntimeException $e) {
+                self::assertSame('inner rollback', $e->getMessage());
+            }
+            $outer->execute('INSERT INTO items VALUES (5)')->await();
+            return $value;
+        })->await(new \Amp\TimeoutCancellation(5));
+        self::assertSame('nested result', $result);
+        self::assertSame([['id' => 1], ['id' => 2], ['id' => 3], ['id' => 5]],
+            $db->fetchAll('SELECT id FROM items ORDER BY id')->await());
+    }
+
+    public function testOuterRollbackAlsoUndoesCommittedSavepoints(): void
+    {
+        $db = new AsyncSqliteManager(['database' => ':memory:']);
+        $db->execute('CREATE TABLE items (id INTEGER)')->await();
+        try {
+            $db->transaction(function ($outer) {
+                $outer->transaction(fn ($inner) => $inner->execute('INSERT INTO items VALUES (1)'))->await();
+                throw new \RuntimeException('outer rollback');
+            })->await(new \Amp\TimeoutCancellation(5));
+            self::fail('Expected outer rollback');
+        } catch (\RuntimeException $e) {
+            self::assertSame('outer rollback', $e->getMessage());
+        }
+        self::assertSame([], $db->fetchAll('SELECT * FROM items')->await());
+    }
+
 }
