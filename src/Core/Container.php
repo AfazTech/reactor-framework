@@ -62,11 +62,6 @@ class Container
     private array $scoped = [];
 
     /**
-     * @var array<string, object> Resolved scoped instances.
-     */
-    private array $scopedInstances = [];
-
-    /**
      * @var array<string, string> Alias map: alias => real abstract.
      */
     private array $aliases = [];
@@ -86,7 +81,16 @@ class Container
      * @var array<int, string> Stack of classes being resolved, used to
      *                         detect circular dependencies.
      */
-    private array $resolving = [];
+    private ?\WeakMap $resolvingByFiber = null;
+    private ?\WeakMap $scopedByFiber = null;
+    private ?object $mainContext = null;
+    private array $pendingSingletons = [];
+    private ?\WeakMap $waitingOn = null;
+
+    private function context(): object
+    {
+        return \Fiber::getCurrent() ?? ($this->mainContext ??= new \stdClass());
+    }
 
     /**
      * Register a transient binding.
@@ -123,7 +127,8 @@ class Container
     /**
      * Register a scoped binding.
      *
-     * Scoped instances live for one "scope". In a long-running worker
+     * Scoped instances are isolated per Fiber and live until explicitly reset.
+     * In a long-running worker
      * the scope typically matches a single job or update; call
      * forgetScopedInstances() at scope boundaries.
      */
@@ -197,7 +202,8 @@ class Container
      */
     public function forgetScopedInstances(): void
     {
-        $this->scopedInstances = [];
+        $this->scopedByFiber ??= new \WeakMap();
+        unset($this->scopedByFiber[$this->context()]);
     }
 
     /**
@@ -253,20 +259,50 @@ class Container
             return $this->instances[$abstract];
         }
 
-        if (isset($this->scopedInstances[$abstract])) {
-            return $this->scopedInstances[$abstract];
+        $this->scopedByFiber ??= new \WeakMap();
+        $context = $this->context();
+        $scoped = $this->scopedByFiber[$context] ?? [];
+        if (isset($scoped[$abstract])) {
+            return $scoped[$abstract];
         }
-
         if (isset($this->scoped[$abstract])) {
             $instance = $this->scoped[$abstract]($this);
-            $this->scopedInstances[$abstract] = $instance;
+            $scoped[$abstract] = $instance;
+            $this->scopedByFiber[$context] = $scoped;
             return $instance;
         }
-
         if (isset($this->singletons[$abstract])) {
-            $instance = $this->singletons[$abstract]($this);
-            $this->instances[$abstract] = $instance;
-            return $instance;
+            if (isset($this->pendingSingletons[$abstract])) {
+                [$owner, $pending] = $this->pendingSingletons[$abstract];
+                if ($owner === $context) {
+                    throw new ContainerResolutionException('Circular singleton dependency: ' . $abstract);
+                }
+                $this->waitingOn ??= new \WeakMap();
+                $cursor = $owner;
+                while (isset($this->waitingOn[$cursor])) {
+                    $cursor = $this->waitingOn[$cursor];
+                    if ($cursor === $context) {
+                        throw new ContainerResolutionException('Circular dependency between concurrent singleton factories.');
+                    }
+                }
+                $this->waitingOn[$context] = $owner;
+                try { return $pending->getFuture()->await(); }
+                finally { unset($this->waitingOn[$context]); }
+            }
+            $pending = new \Amp\DeferredFuture();
+            $pending->getFuture()->ignore();
+            $this->pendingSingletons[$abstract] = [$context, $pending];
+            try {
+                $instance = $this->singletons[$abstract]($this);
+                $this->instances[$abstract] = $instance;
+                $pending->complete($instance);
+                return $instance;
+            } catch (\Throwable $e) {
+                $pending->error($e);
+                throw $e;
+            } finally {
+                unset($this->pendingSingletons[$abstract]);
+            }
         }
 
         if (isset($this->bindings[$abstract])) {
@@ -287,8 +323,7 @@ class Container
         return isset($this->bindings[$abstract])
             || isset($this->singletons[$abstract])
             || isset($this->scoped[$abstract])
-            || isset($this->instances[$abstract])
-            || isset($this->scopedInstances[$abstract]);
+            || isset($this->instances[$abstract]);
     }
 
     /**
@@ -348,8 +383,11 @@ class Container
      */
     private function resolve(string $class): object
     {
-        if (in_array($class, $this->resolving, true)) {
-            $chain = implode(' -> ', $this->resolving) . ' -> ' . $class;
+        $this->resolvingByFiber ??= new \WeakMap();
+        $context = $this->context();
+        $stack = $this->resolvingByFiber[$context] ?? [];
+        if (in_array($class, $stack, true)) {
+            $chain = implode(' -> ', $stack) . ' -> ' . $class;
             throw new ContainerResolutionException(
                 "Circular dependency detected: {$chain}. Please check your dependencies."
             );
@@ -370,7 +408,8 @@ class Container
             return $reflection->newInstance();
         }
 
-        $this->resolving[] = $class;
+        $stack[] = $class;
+        $this->resolvingByFiber[$context] = $stack;
         $dependencies = [];
 
         try {
@@ -420,11 +459,16 @@ class Container
 
                 $dependencies[] = $this->get($typeName);
             }
+            return $reflection->newInstanceArgs($dependencies);
         } finally {
-            array_pop($this->resolving);
+            $stack = $this->resolvingByFiber[$context];
+            array_pop($stack);
+            if ($stack === []) {
+                unset($this->resolvingByFiber[$context]);
+            } else {
+                $this->resolvingByFiber[$context] = $stack;
+            }
         }
-
-        return $reflection->newInstanceArgs($dependencies);
     }
 
     /**
