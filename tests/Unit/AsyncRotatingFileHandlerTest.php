@@ -70,6 +70,29 @@ class AsyncRotatingFileHandlerTest extends TestCase
 
         $remaining = glob($this->tempDir . '/app-*.log') ?: [];
 
-        $this->assertLessThanOrEqual(3, count($remaining));
+        $this->assertCount(3, $remaining);
+        $this->assertFileDoesNotExist($this->tempDir . '/app-2020-01-03.log');
+        $this->assertFileExists($this->tempDir . '/app-2020-01-04.log');
+        $this->assertFileExists($this->tempDir . '/app-2020-01-05.log');
+        $this->assertFileExists($this->tempDir . '/app-' . date('Y-m-d') . '.log');
+        $handler->close();
+    }
+
+    public function testRetentionPreservesOtherPrefixesAndNonLogFiles(): void
+    {
+        file_put_contents($this->tempDir . '/app-2020-01-01.log', 'old');
+        file_put_contents($this->tempDir . '/worker-2020-01-01.log', 'other logger');
+        file_put_contents($this->tempDir . '/app-2020-01-01.log.bak', 'backup');
+
+        $handler = new AsyncRotatingFileHandler($this->tempDir, 'app', 1);
+        $logger = new MonologLogger('test', [$handler]);
+        $logger->info('Current entry');
+        $handler->close();
+
+        $this->assertFileDoesNotExist($this->tempDir . '/app-2020-01-01.log');
+        $this->assertFileExists($this->tempDir . '/worker-2020-01-01.log');
+        $this->assertFileExists($this->tempDir . '/app-2020-01-01.log.bak');
+        $this->assertStringContainsString('Current entry',
+            file_get_contents($this->tempDir . '/app-' . date('Y-m-d') . '.log'));
     }
 }

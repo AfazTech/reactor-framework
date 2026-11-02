@@ -88,10 +88,17 @@ final class AsyncRotatingFileHandler extends AbstractProcessingHandler
 
     private function pruneOldFiles(): void
     {
-        $pattern = $this->directory . '/' . $this->filenamePrefix . '-*.log';
-        $files = glob($pattern);
+        $files = [];
+        foreach (File\listFiles($this->directory) as $filename) {
+            if (str_starts_with($filename, $this->filenamePrefix . '-')
+                && str_ends_with($filename, '.log')
+                && File\isFile($this->directory . '/' . $filename)
+            ) {
+                $files[] = $filename;
+            }
+        }
 
-        if ($files === false || count($files) <= $this->maxFiles) {
+        if (count($files) <= $this->maxFiles) {
             return;
         }
 
@@ -100,7 +107,12 @@ final class AsyncRotatingFileHandler extends AbstractProcessingHandler
         $remove = array_slice($files, 0, count($files) - $this->maxFiles);
 
         foreach ($remove as $file) {
-            @unlink($file);
+            try {
+                File\deleteFile($this->directory . '/' . $file);
+            } catch (File\FilesystemException) {
+                // Retention is best-effort, including when another process
+                // already removed the file. Keep writing the current log.
+            }
         }
     }
 }
