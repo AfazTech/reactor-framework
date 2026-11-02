@@ -4,7 +4,6 @@ namespace Reactor\Core\Schedule;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Contracts\ScheduledJobInterface;
 use Reactor\Core\Container;
-use Reactor\Core\Traits\ProcessCheck;
 
 /**
  * A scheduled event that can be configured with a cron expression
@@ -15,28 +14,14 @@ use Reactor\Core\Traits\ProcessCheck;
  * writes into its own package directory inside the Composer vendor
  * tree. A custom directory can be supplied for advanced setups.
  *
- * Overlap prevention is PID-aware:
- *
- *   - The lock file stores the PID of the process that acquired it.
- *   - A subsequent acquireLock() from another process skips execution
- *     as long as that PID is still alive, regardless of how long the
- *     task has been running.
- *   - A lock whose recorded PID is dead (or whose file is empty /
- *     corrupted) is treated as stale and removed.
- *   - releaseLock() only removes the file when the recorded PID matches
- *     the current process, so a slow task that finishes late cannot
- *     delete a newer lock held by a different process.
- *
- * overlapExpiryMinutes is deliberately NOT used to force-release the
- * lock. A long-running task is a legitimate state; force-releasing it
- * would immediately re-introduce the concurrent-execution bug this
- * class is supposed to prevent. The threshold is used only to emit a
- * warning when a task has been running longer than expected.
+ * Overlap prevention uses a non-blocking OS file lock held for the entire
+ * execution. The persistent lock file must not be unlinked: replacing its
+ * inode would let another process acquire a different lock for the same task.
+ * The OS releases the lock when the process exits, including after a crash.
+ * overlapExpiryMinutes only controls warnings; it never expires a live lock.
  */
 class Event
 {
-    use ProcessCheck;
-
     private string $expression = '* * * * *';
     private ?string $name = null;
     private bool $preventOverlap = false;
@@ -44,6 +29,9 @@ class Event
     private $callback;
     private ?string $jobClass = null;
     private string $lockDirectory;
+
+    /** @var resource|null */
+    private $lockHandle = null;
 
     /**
      * Set to true after the first warning about a callback that could
@@ -167,9 +155,8 @@ class Event
      * $expiryMinutes is a warning threshold, not a force-release
      * deadline. When a task runs longer than this, acquireLock() logs
      * a warning but still refuses to start a second instance. To
-     * recover from a genuinely hung task, kill the process
-     * (kill -9) so the recorded PID becomes dead and the next run
-     * treats the lock as stale.
+     * recover from a genuinely hung task, terminate the process so the OS
+     * releases its file lock.
      *
      * Passing 0 disables the warning entirely.
      */
@@ -218,85 +205,54 @@ class Event
             return true;
         }
 
-        if (!is_dir($this->lockDirectory)) {
-            mkdir($this->lockDirectory, 0755, true);
+        if ($this->lockHandle !== null) {
+            return false;
+        }
+
+        if (!is_dir($this->lockDirectory)
+            && !@mkdir($this->lockDirectory, 0755, true)
+            && !is_dir($this->lockDirectory)
+        ) {
+            throw new \RuntimeException('Cannot create schedule lock directory.');
         }
 
         $lockFile = $this->lockFile();
-
-        if (file_exists($lockFile)) {
-            $raw = trim((string) file_get_contents($lockFile));
-            $recordedPid = $raw === '' ? 0 : (int) $raw;
-
-            if ($recordedPid > 0
-                && $recordedPid !== getmypid()
-                && $this->isProcessRunning($recordedPid)
-            ) {
-                // Another live process holds the lock. This is a
-                // legitimate state even when the task has been running
-                // for a long time, so we never force-release here.
-                // $overlapExpiryMinutes only controls observability.
-                $age = time() - (int) filemtime($lockFile);
-
-                if ($this->overlapExpiryMinutes > 0
-                    && $age >= ($this->overlapExpiryMinutes * 60)
-                ) {
-                    $logger->warning(
-                        "Scheduled task is still running beyond overlapExpiryMinutes; "
-                        . "not starting a new instance",
-                        [
-                            'task'        => $taskName,
-                            'pid'         => $recordedPid,
-                            'age_seconds' => $age,
-                            'expiry_min'  => $this->overlapExpiryMinutes,
-                        ]
-                    );
-                } else {
-                    $logger->debug(
-                        "Scheduled task skipped: another instance is running",
-                        ['task' => $taskName, 'pid' => $recordedPid]
-                    );
-                }
-
-                return false;
-            }
-
-            // Stale lock: process dead, empty file, or corrupted PID.
-            $logger->debug(
-                "Removing stale scheduled-task lock",
-                ['task' => $taskName, 'stale_pid' => $recordedPid]
-            );
-            @unlink($lockFile);
+        $handle = @fopen($lockFile, 'c+');
+        if ($handle === false) {
+            throw new \RuntimeException('Cannot open scheduled-task lock: ' . $lockFile);
         }
 
-        file_put_contents($lockFile, (string) getmypid());
+        if (!flock($handle, LOCK_EX | LOCK_NB)) {
+            $age = time() - (int) (fstat($handle)['mtime'] ?? time());
+            fclose($handle);
+            $context = ['task' => $taskName, 'age_seconds' => $age];
+            if ($this->overlapExpiryMinutes > 0 && $age >= $this->overlapExpiryMinutes * 60) {
+                $logger->warning('Scheduled task is still running beyond overlapExpiryMinutes', $context);
+            } else {
+                $logger->debug('Scheduled task skipped: another instance is running', $context);
+            }
+            return false;
+        }
+
+        if (!ftruncate($handle, 0) || fwrite($handle, (string) getmypid()) === false || !fflush($handle)) {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+            throw new \RuntimeException('Cannot write scheduled-task lock: ' . $lockFile);
+        }
+        $this->lockHandle = $handle;
         return true;
     }
 
-    /**
-     * Release the lock only if this process actually owns it.
-     */
     private function releaseLock(): void
     {
-        if (!$this->preventOverlap) {
+        if ($this->lockHandle === null) {
             return;
         }
 
-        if (str_starts_with($this->getName(), 'event_')) {
-            return;
-        }
-
-        $lockFile = $this->lockFile();
-        if (!file_exists($lockFile)) {
-            return;
-        }
-
-        $raw = trim((string) file_get_contents($lockFile));
-        $recordedPid = $raw === '' ? 0 : (int) $raw;
-
-        if ($recordedPid === getmypid()) {
-            @unlink($lockFile);
-        }
+        // Keep the inode in place so every contender locks the same file.
+        flock($this->lockHandle, LOCK_UN);
+        fclose($this->lockHandle);
+        $this->lockHandle = null;
     }
 
     /**
