@@ -640,13 +640,24 @@ public function size(string $queue): int;
 
 `Worker::work(WorkerOptions)` owns the loop, retry policy, timeout enforcement, and graceful shutdown via the restart signal.
 
+Timeouts are cooperative. Implement `Reactor\Contracts\CancellableJobInterface`
+and accept `?Amp\Cancellation $cancellation = null` as the second `handle()`
+argument. Pass it to cancellable operations such as
+`Amp\delay(5, cancellation: $cancellation)` and check it before additional side
+effects. The worker waits for a timed-out attempt to settle before releasing
+its reservation. Legacy jobs and jobs that ignore cancellation are allowed to
+finish; successful late completion is acknowledged with a warning, not retried.
+Blocking PHP code cannot be interrupted by this timeout; use process supervision
+for a hard runtime limit. Keep jobs idempotent and configure `retry_after` above
+the longest actual runtime to avoid another worker reclaiming a live attempt.
+
 `WorkerOptions`:
 
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `queue` | `default` | Name or ordered list |
 | `tries` | `3` | Max attempts per job |
-| `timeout` | `60` | Seconds per job (0 = no timeout) |
+| `timeout` | `60` | Cooperative cancellation deadline; legacy jobs are awaited (0 = disabled) |
 | `sleep` | `3` | Sleep between empty-queue polls |
 | `maxJobs` | `0` | Jobs before exit (0 = unlimited) |
 | `maxTime` | `0` | Seconds before exit (0 = unlimited) |

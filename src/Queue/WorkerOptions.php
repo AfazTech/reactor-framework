@@ -12,7 +12,7 @@ final class WorkerOptions
     /**
      * @param string|array<int, string> $queue          Single queue name or ordered list (priority).
      * @param int                       $tries          Maximum attempts per job before it is marked as failed.
-     * @param int                       $timeout        Seconds a single job may run (0 = no timeout).
+     * @param int                       $timeout        Cooperative cancellation deadline (0 = no timeout); legacy jobs are awaited.
      * @param int                       $sleep          Seconds to sleep between empty-queue polls.
      * @param int                       $maxJobs        Stop after this many jobs (0 = unlimited).
      * @param int                       $maxTime        Stop after this many seconds (0 = unlimited).

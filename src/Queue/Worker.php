@@ -3,6 +3,8 @@ namespace Reactor\Queue;
 
 use Amp\CancelledException;
 use Amp\TimeoutCancellation;
+use Amp\NullCancellation;
+use Reactor\Contracts\CancellableJobInterface;
 use Reactor\Contracts\LoggerInterface;
 use Reactor\Core\Container;
 use function Amp\async;
@@ -17,12 +19,12 @@ use function Amp\delay;
  *     graceful shutdown via the restart signal.
  *   - FailedJobRepository persists jobs that exhausted their retries.
  *
- * Timeout enforcement uses Amp's TimeoutCancellation. Jobs that perform
- * async I/O (the common case in Reactor) are truly cancelled when the
- * timeout fires. Jobs that block the PHP process with synchronous code
- * cannot be interrupted; for those, the worker abandons waiting and
- * continues with the next job, leaving the leaked fiber to finish on
- * its own.
+ * TimeoutCancellation is passed to jobs implementing CancellableJobInterface.
+ * Cancellation is cooperative: a job must pass it to its I/O operations.
+ * A timed-out attempt is always awaited until it actually settles before
+ * releasing its reservation. Legacy jobs cannot be forcibly cancelled; if
+ * they finish after the deadline they are acknowledged, not retried.
+ * Use process supervision for a hard limit on blocking or uncooperative jobs.
  *
  * Graceful shutdown: SIGTERM and SIGINT set a stop flag. The worker
  * finishes the current job, then exits. Without this handler a plain
@@ -154,12 +156,32 @@ class Worker
             throw new \RuntimeException("Job {$class} must have a handle() method.");
         }
 
-        $future = async(static fn () => $instance->handle($data));
+        $cancellation = $options->timeout > 0
+            ? new TimeoutCancellation((float) $options->timeout)
+            : null;
+        $future = async(static function () use ($instance, $data, $cancellation): void {
+            if ($instance instanceof CancellableJobInterface) {
+                $instance->handle($data, $cancellation ?? new NullCancellation());
+            } else {
+                $instance->handle($data);
+            }
+        });
 
-        if ($options->timeout > 0) {
-            $future->await(new TimeoutCancellation((float) $options->timeout));
-        } else {
+        try {
+            $future->await($cancellation);
+        } catch (CancelledException $e) {
+            if ($cancellation === null || !$cancellation->isRequested()) {
+                throw $e;
+            }
+
+            // await(cancellation) only cancels the wait. Do not release or
+            // retry the reservation while the original job can still run.
+            // If it really was cancelled, await() propagates that failure.
             $future->await();
+            $this->logger->warning('Job finished after its timeout; acknowledging without retry', [
+                'id' => $job['id'],
+                'timeout' => $options->timeout,
+            ]);
         }
     }
 
