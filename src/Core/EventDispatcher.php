@@ -21,6 +21,35 @@ class EventDispatcher
      */
     private array $wildcardListeners = [];
 
+    private array $queued = [];
+
+    public function __construct(private ?\Closure $enqueue = null) {}
+
+    public function onQueued(string $event, string $listener, string $queue = 'default'): void
+    {
+        if ($event === '' || $queue === '') { throw new \InvalidArgumentException('Event and queue cannot be empty.'); }
+        if (!is_subclass_of($listener, \Reactor\Contracts\QueuedEventListenerInterface::class)) {
+            throw new \InvalidArgumentException('Queued listeners must implement QueuedEventListenerInterface.');
+        }
+        $this->queued[$event][$listener . ':' . $queue] = [$listener, $queue];
+    }
+
+    public function subscribe(string $listener): void
+    {
+        foreach ((new \ReflectionClass($listener))->getAttributes(\Reactor\Attributes\QueuedListener::class) as $attribute) {
+            $binding = $attribute->newInstance();
+            $this->onQueued($binding->event, $listener, $binding->queue);
+        }
+    }
+
+    private function assertPlainData(mixed $value): void
+    {
+        if (is_array($value)) { foreach ($value as $item) { $this->assertPlainData($item); } return; }
+        if ($value !== null && !is_scalar($value)) {
+            throw new \InvalidArgumentException('Queued event arguments must contain only JSON-compatible data.');
+        }
+    }
+
     /**
      * Register a listener for an event. Use "*" to register a wildcard listener.
      */
@@ -73,6 +102,13 @@ class EventDispatcher
             }
         }
 
+        foreach ($this->queued[$event] ?? [] as [$listener, $queue]) {
+            if ($this->enqueue === null) { throw new \LogicException('No queued-event dispatcher configured.'); }
+            $json = json_encode($args, JSON_THROW_ON_ERROR);
+            $this->assertPlainData($args);
+            if (strlen($json) > 65536) { throw new \LengthException('Queued event payload exceeds 64 KiB.'); }
+            ($this->enqueue)($listener, $event, $args, $queue);
+        }
         return false;
     }
 }
