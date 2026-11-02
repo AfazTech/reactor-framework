@@ -14,6 +14,10 @@ use Reactor\Core\MiddlewareManager;
 use Reactor\Core\ErrorHandler;
 use Reactor\Core\UpdateProcessor;
 use Reactor\Core\UpdateScope;
+use Reactor\Core\UpdateSequencer;
+use Reactor\RateLimit\ThrottleGuard;
+use Reactor\Callbacks\CallbackStore;
+use Reactor\Diagnostics\RuntimeMetrics;
 use Reactor\Core\UpdateTypeResolver;
 use Reactor\Core\UnknownCommandHandler;
 use Reactor\Core\NullUserProvider;
@@ -100,8 +104,11 @@ class CoreServiceProvider implements ServiceProviderInterface
             return $c->get(LanguageInterface::class);
         });
 
-        $container->singleton(EventDispatcher::class, function () {
-            return new EventDispatcher();
+        $container->singleton(EventDispatcher::class, function () use ($container) {
+            return new EventDispatcher(function ($listener, $event, $arguments, $queue) use ($container) {
+                $container->get(QueueManager::class)->push(\Reactor\Listeners\InvokeQueuedListener::class,
+                    ['listener' => $listener, 'event' => $event, 'arguments' => $arguments], $queue)->await();
+            });
         });
 
         $container->singleton(UpdateTypeResolver::class, function () {
@@ -263,6 +270,8 @@ class CoreServiceProvider implements ServiceProviderInterface
             );
         });
 
+        (new BotFeaturesServiceProvider())->register($container);
+
         $container->singleton(UpdateScope::class, fn () => new UpdateScope());
 
         $container->singleton(UpdateProcessor::class, function ($c) {
@@ -279,7 +288,11 @@ class CoreServiceProvider implements ServiceProviderInterface
                 $c->get(UserProviderInterface::class),
                 $c->get(UpdateTypeResolver::class),
                 $c->get(UnknownCommandHandler::class),
-                $c->get(UpdateScope::class)
+                $c->get(UpdateScope::class),
+                $c->get(UpdateSequencer::class),
+                $c->get(ThrottleGuard::class),
+                $c->get(CallbackStore::class),
+                $c->get(RuntimeMetrics::class)
             );
         });
 

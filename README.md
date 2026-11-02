@@ -62,3 +62,9 @@ Contributions are welcome. Please read the contribution guidelines.
 ## License
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Development-branch bot features
+
+Conversation flows, ordered updates, attribute-based incoming throttling,
+user-bound callback payloads, fake Telegram testing, queued event listeners and
+runtime diagnostics are described with runnable snippets in [FEATURES.md](FEATURES.md).
