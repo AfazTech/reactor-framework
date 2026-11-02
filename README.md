@@ -29,8 +29,9 @@ Reactor combines attribute-based routing, a dependency injection container, a mi
 
 ## Requirements
 
-- PHP >= 8.1
+- PHP >= 8.4
 - Composer
+- Neili ^4.0
 - PDO extension for the chosen database (SQLite is used by default)
 
 ## Installation

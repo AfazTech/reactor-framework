@@ -44,7 +44,7 @@ final class AsyncSqliteManager implements AsyncDatabaseManagerInterface
     {
         return async(function () use ($sql, $params): array {
             $rows = [];
-            foreach ($this->connection->query($sql, $params) as $row) {
+            foreach ($this->connection->execute($sql, $params) as $row) {
                 $rows[] = $row;
             }
             return $rows;
@@ -53,7 +53,7 @@ final class AsyncSqliteManager implements AsyncDatabaseManagerInterface
 
     public function fetchOne(string $sql, array $params = []): Future
     {
-        return async(fn(): ?array => $this->connection->query($sql, $params)->fetchRow());
+        return async(fn(): ?array => $this->connection->execute($sql, $params)->fetchRow());
     }
 
     public function execute(string $sql, array $params = []): Future
@@ -90,14 +90,14 @@ final class AsyncSqliteManager implements AsyncDatabaseManagerInterface
             fetchAll: function (string $sql, array $params) use ($transaction): Future {
                 return async(function () use ($transaction, $sql, $params): array {
                     $rows = [];
-                    foreach ($transaction->query($sql, $params) as $row) {
+                    foreach ($transaction->execute($sql, $params) as $row) {
                         $rows[] = $row;
                     }
                     return $rows;
                 });
             },
             fetchOne: fn(string $sql, array $params): Future => async(
-                fn(): ?array => $transaction->query($sql, $params)->fetchRow()
+                fn(): ?array => $transaction->execute($sql, $params)->fetchRow()
             ),
             execute: fn(string $sql, array $params): Future => async(
                 fn(): int => $transaction->execute($sql, $params)->getRowCount()

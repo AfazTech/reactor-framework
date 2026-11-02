@@ -57,7 +57,7 @@ class QueueManager
                     'available_at' => $now + $delay,
                     'created_at'   => $now,
                 ]
-            );
+            )->await();
         });
     }
 
