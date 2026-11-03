@@ -18,16 +18,13 @@ final class AsyncMysqlManager implements AsyncDatabaseManagerInterface
 
     public function __construct(array $config)
     {
-        $dsn = sprintf(
-            'host=%s port=%d user=%s password=%s db=%s',
-            $config['host'] ?? '127.0.0.1',
-            $config['port'] ?? 3306,
-            $config['username'] ?? 'root',
-            $config['password'] ?? '',
-            $config['database'] ?? 'reactor',
-        );
-
-        $this->pool = new MysqlConnectionPool(MysqlConfig::fromString($dsn));
+        $this->pool = new MysqlConnectionPool(new MysqlConfig(
+            host: $config['host'] ?? '127.0.0.1',
+            port: (int) ($config['port'] ?? 3306),
+            user: $config['username'] ?? 'root',
+            password: $config['password'] ?? '',
+            database: $config['database'] ?? 'reactor',
+        ));
     }
 
     public function getDriver(): string

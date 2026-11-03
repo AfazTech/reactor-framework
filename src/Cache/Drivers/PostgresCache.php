@@ -19,16 +19,13 @@ class PostgresCache implements CacheInterface
 
     public function __construct(array $config)
     {
-        $dsn = sprintf(
-            'host=%s user=%s password=%s dbname=%s port=%d',
-            $config['host'] ?? '127.0.0.1',
-            $config['username'] ?? 'postgres',
-            $config['password'] ?? '',
-            $config['database'] ?? 'reactor',
-            $config['port'] ?? 5432
-        );
-
-        $this->pool = new PostgresConnectionPool(PostgresConfig::fromString($dsn));
+        $this->pool = new PostgresConnectionPool(new PostgresConfig(
+            host: $config['host'] ?? '127.0.0.1',
+            port: (int) ($config['port'] ?? 5432),
+            user: $config['username'] ?? 'postgres',
+            password: $config['password'] ?? '',
+            database: $config['database'] ?? 'reactor',
+        ));
         $this->table = $this->normalizeTableName($config['table'] ?? 'cache');
         $this->allowedClasses = $config['allowed_classes'] ?? false;
     }

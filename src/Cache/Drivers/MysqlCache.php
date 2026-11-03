@@ -19,16 +19,13 @@ class MysqlCache implements CacheInterface
 
     public function __construct(array $config)
     {
-        $dsn = sprintf(
-            'host=%s user=%s password=%s db=%s port=%d',
-            $config['host'] ?? '127.0.0.1',
-            $config['username'] ?? 'root',
-            $config['password'] ?? '',
-            $config['database'] ?? 'reactor',
-            $config['port'] ?? 3306
-        );
-
-        $this->pool = new MysqlConnectionPool(MysqlConfig::fromString($dsn));
+        $this->pool = new MysqlConnectionPool(new MysqlConfig(
+            host: $config['host'] ?? '127.0.0.1',
+            port: (int) ($config['port'] ?? 3306),
+            user: $config['username'] ?? 'root',
+            password: $config['password'] ?? '',
+            database: $config['database'] ?? 'reactor',
+        ));
         $this->table = $this->normalizeTableName($config['table'] ?? 'cache');
         $this->allowedClasses = $config['allowed_classes'] ?? false;
     }

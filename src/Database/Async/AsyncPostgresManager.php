@@ -20,16 +20,13 @@ final class AsyncPostgresManager implements AsyncDatabaseManagerInterface
 
     public function __construct(array $config)
     {
-        $dsn = sprintf(
-            'host=%s port=%d user=%s password=%s dbname=%s',
-            $config['host'] ?? '127.0.0.1',
-            $config['port'] ?? 5432,
-            $config['username'] ?? 'postgres',
-            $config['password'] ?? '',
-            $config['database'] ?? 'reactor',
-        );
-
-        $this->pool = new PostgresConnectionPool(PostgresConfig::fromString($dsn));
+        $this->pool = new PostgresConnectionPool(new PostgresConfig(
+            host: $config['host'] ?? '127.0.0.1',
+            port: (int) ($config['port'] ?? 5432),
+            user: $config['username'] ?? 'postgres',
+            password: $config['password'] ?? '',
+            database: $config['database'] ?? 'reactor',
+        ));
     }
 
     public function getDriver(): string
