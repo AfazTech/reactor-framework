@@ -1,6 +1,6 @@
 # Bot development features
 
-These APIs are available on the development branch. A production application
+These APIs are available in Reactor Framework 0.9 and later. A production application
 must install a framework revision containing them. They use the existing Amp
 runtime; asynchronous I/O suspends a Fiber rather than blocking the event loop.
 

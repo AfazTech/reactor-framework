@@ -31,7 +31,7 @@ Reactor combines attribute-based routing, a dependency injection container, a mi
 
 - PHP >= 8.4
 - Composer
-- Neili ^4.0
+- Neili ^4.0.1
 - PDO extension for the chosen database (SQLite is used by default)
 
 ## Installation
@@ -63,7 +63,7 @@ Contributions are welcome. Please read the contribution guidelines.
 
 This project is licensed under the [MIT License](LICENSE).
 
-## Development-branch bot features
+## Bot development features (0.9+)
 
 Conversation flows, ordered updates, attribute-based incoming throttling,
 user-bound callback payloads, fake Telegram testing, queued event listeners and

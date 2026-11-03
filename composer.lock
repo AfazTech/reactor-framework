@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "6bf97d977e8c69144b0d713a539acddc",
+    "content-hash": "c396595b4a8f64400eb661bd8423e3b7",
     "packages": [
         {
             "name": "afaztech/neili",
-            "version": "v4.0.0",
+            "version": "v4.0.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/AfazTech/neili.git",
-                "reference": "6f035f0a925f8af3f49e38d7ef79e34af0e25a66"
+                "reference": "12f17ba676f8fac768253141816d431ffe5f68f5"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/AfazTech/neili/zipball/6f035f0a925f8af3f49e38d7ef79e34af0e25a66",
-                "reference": "6f035f0a925f8af3f49e38d7ef79e34af0e25a66",
+                "url": "https://api.github.com/repos/AfazTech/neili/zipball/12f17ba676f8fac768253141816d431ffe5f68f5",
+                "reference": "12f17ba676f8fac768253141816d431ffe5f68f5",
                 "shasum": ""
             },
             "require": {
@@ -59,9 +59,9 @@
             ],
             "support": {
                 "issues": "https://github.com/AfazTech/neili/issues",
-                "source": "https://github.com/AfazTech/neili/tree/v4.0.0"
+                "source": "https://github.com/AfazTech/neili/tree/v4.0.1"
             },
-            "time": "2026-11-02T12:28:59+00:00"
+            "time": "2026-11-02T15:22:29+00:00"
         },
         {
             "name": "amphp/amp",
